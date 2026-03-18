@@ -33,20 +33,20 @@ The volume begins billing at ~$0.07/GB/month from creation. Delete it when you n
 When creating a pod:
 
 1. Select your GPU template (A100 80GB, B200, etc.).
-2. Under **Volumes**, select your Network Volume. It will be mounted at `/runpod-volume/`.
-3. Set **container disk** — model data will live on the Network Volume, not container disk. But, model weights will likely live on container disk.
+2. Under **Volumes**, select your Network Volume. It will be mounted at `/workspace`.
+ Model data will live on the Network Volume as will model weights.
 
 ### 3. Set up the environment on the Network Volume
 
 ```bash
 # Verify the volume is mounted
-df -h /runpod-volume
+df -h /workspace
 ```
 
 ### 4. Clone the repo onto the Network Volume
 
 ```bash
-cd /runpod-volume
+cd /workspace
 git clone <repo-url>
 cd Reasoning-Theater
 uv venv && uv sync
@@ -76,12 +76,12 @@ Once the runner script completes, **terminate the pod** (stops GPU billing). The
 
 ```bash
 # Optional: verify data before terminating
-du -sh /runpod-volume/Reasoning-Theater/data/
+du -sh /workspace/Reasoning-Theater/data/
 ```
 
 ### 8. Re-attach for the next run or analysis
 
-Launch a new pod in the same region, attach the same Network Volume. The repo, weights, and all previously generated data are immediately available at `/runpod-volume/Reasoning-Theater/`.
+Launch a new pod in the same region, attach the same Network Volume. The repo, weights, and all previously generated data are immediately available at `/workspace/Reasoning-Theater/`.
 
 ---
 

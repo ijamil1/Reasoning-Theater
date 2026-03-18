@@ -54,7 +54,7 @@ experiments/
 
 #### 0. Install uv and clone repo into network volume
 
-cd /runpod-volume
+cd /workspace
 
 curl -LsSf https://astral.sh/uv/install.sh | sh OR wget -qO- https://astral.sh/uv/install.sh | sh
 
@@ -96,7 +96,7 @@ export TRANSFORMERS_CACHE=/workspace/hf_cache/transformers
 export TMPDIR=/workspace/tmp
 ```
 
-NOTE: the above setup will download model wts to ephemeral volume disk.
+NOTE: the above setup will download model wts to the network volume (persistent) as the network volume replace the default volume disk.
 
 #### 4. Run data generation
 
@@ -121,7 +121,7 @@ Sizes are for bfloat16 tensors over reasoning-trace tokens only (`hidden_dim × 
 | Qwen-32B (d=5120) | ~83 GB | ~18 GB | ~31 GB | ~3 GB | **~135 GB** |
 | GPT-OSS-120B (d=4096) | ~67 GB | ~15 GB | ~25 GB | ~2.5 GB | **~110 GB** |
 
-Ensure the  machine's network volume (persistent) disk has ~ **500 GB free** before starting data generation (needs to account for repo size + stage 1 outputs + stage 2 ouputs). 
+Ensure the  machine's network volume (persistent) disk has ~ **700 GB free** before starting data generation (needs to account for repo size + stage 1 outputs + stage 2 ouputs + 64 GB + 240 GB of model wts). 
 
 **After data generation:** 
 Run the analysis pipeline:
