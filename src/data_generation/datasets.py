@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -12,6 +13,8 @@ from datasets import load_dataset
 from .data_gen_config import DataGenerationConfig
 
 logger = logging.getLogger(__name__)
+
+CHOICE_LABELS = ["A", "B", "C", "D"]
 
 
 @dataclass
@@ -52,20 +55,20 @@ def build_question_id_lookup(existing_responses_dir: Path) -> Dict[str, str]:
     return lookup
 
 
-def format_r1_question(
+def format_question(
     question: str,
     choices: List[str],
     choice_labels: List[str] = None,
 ) -> str:
-    """Format a question in the R1 prompt style."""
+    """Format a multiple-choice question into the standard prompt template."""
     if choice_labels is None:
-        choice_labels = ["A", "B", "C", "D"]
+        choice_labels = CHOICE_LABELS
 
     choices_text = "\n".join(
         f"- ({label}) {choice}" for label, choice in zip(choice_labels, choices)
     )
 
-    formatted = f"""## Question:
+    return f"""## Question:
 {question}
 
 ## Choices:
@@ -74,7 +77,13 @@ def format_r1_question(
 ## Instruction:
 Please analyze the question step by step in <think>...</think> tags, then provide your final answer in JSON format with the key "answer" containing only the letter (A, B, C, or D) of the correct choice."""
 
-    return formatted
+
+def _resolve_hash(formatted: str, question_text: str, question_lookup: Optional[Dict[str, str]]) -> str:
+    if question_lookup:
+        q_key = formatted.split("## Instruction")[0].strip()
+        if q_key in question_lookup:
+            return question_lookup[q_key]
+    return compute_question_hash(question_text)
 
 
 def load_gpqa_questions(
@@ -88,24 +97,20 @@ def load_gpqa_questions(
     questions = []
     for item in dataset:
         question_text = item["Question"]
-        choices = [
-            item["Correct Answer"],
+        correct_text = item["Correct Answer"]
+        incorrect = [
             item["Incorrect Answer 1"],
             item["Incorrect Answer 2"],
             item["Incorrect Answer 3"],
         ]
 
-        correct_text = item["Correct Answer"]
-        formatted = format_r1_question(question_text, choices)
+        correct_idx = random.randint(0, 3)
+        choices = incorrect[:]
+        choices.insert(correct_idx, correct_text)
+        correct_answer = CHOICE_LABELS[correct_idx]
 
-        q_key = formatted.split("## Instruction")[0].strip()
-        if question_lookup and q_key in question_lookup:
-            q_hash = question_lookup[q_key]
-        else:
-            q_hash = compute_question_hash(question_text)
-
-        # GPQA choices are ordered correct-first, so correct is always A
-        correct_answer = "A"
+        formatted = format_question(question_text, choices)
+        q_hash = _resolve_hash(formatted, question_text, question_lookup)
 
         questions.append(
             QuestionData(
@@ -167,22 +172,15 @@ def load_mmlu_questions(
     dataset = dataset.filter(lambda x: x.get("error_type") == "ok")
 
     questions = []
-    choice_labels = ["A", "B", "C", "D"]
-
     for item in dataset:
         question_text = item["question"]
         choices = item["choices"]
 
-        formatted = format_r1_question(question_text, choices)
-
-        q_key = formatted.split("## Instruction")[0].strip()
-        if question_lookup and q_key in question_lookup:
-            q_hash = question_lookup[q_key]
-        else:
-            q_hash = compute_question_hash(question_text)
+        formatted = format_question(question_text, choices)
+        q_hash = _resolve_hash(formatted, question_text, question_lookup)
 
         answer_idx = item["answer"]
-        correct_answer = choice_labels[answer_idx]
+        correct_answer = CHOICE_LABELS[answer_idx]
 
         questions.append(
             QuestionData(
@@ -199,18 +197,124 @@ def load_mmlu_questions(
     return questions
 
 
+def load_arc_questions(
+    config: DataGenerationConfig,
+    subset: str,
+    question_lookup: Optional[Dict[str, str]] = None,
+) -> List[QuestionData]:
+    """Load ARC-Easy or ARC-Challenge questions (test split)."""
+    logger.info(f"Loading ARC {subset} from allenai/ai2_arc")
+    dataset = load_dataset("allenai/ai2_arc", subset, split="test")
+
+    skipped_3 = 0
+    dropped_5 = 0
+    questions = []
+    for item in dataset:
+        question_text = item["question"]
+        raw_labels = list(item["choices"]["label"])
+        raw_choices = list(item["choices"]["text"])
+        answer_key = item["answerKey"]
+
+        n = len(raw_choices)
+        if n == 3:
+            skipped_3 += 1
+            continue
+        if n == 5:
+            # Drop one random incorrect choice to get down to 4
+            incorrect_indices = [i for i, lbl in enumerate(raw_labels) if lbl != answer_key]
+            drop_idx = random.choice(incorrect_indices)
+            raw_labels.pop(drop_idx)
+            raw_choices.pop(drop_idx)
+            dropped_5 += 1
+
+        # Map raw label (may be '1','2','3','4' or 'A','B','C','D','E') to A/B/C/D index
+        correct_idx = raw_labels.index(answer_key)
+        correct_answer = CHOICE_LABELS[correct_idx]
+
+        formatted = format_question(question_text, raw_choices)
+        q_hash = _resolve_hash(formatted, question_text, question_lookup)
+
+        questions.append(
+            QuestionData(
+                question_hash=q_hash,
+                question=question_text,
+                choices=raw_choices,
+                correct_answer=correct_answer,
+                formatted_question=formatted,
+                category=subset,
+            )
+        )
+
+    logger.info(
+        f"Loaded {len(questions)} ARC {subset} questions "
+        f"(skipped {skipped_3} with 3 choices, trimmed {dropped_5} with 5 choices)"
+    )
+    return questions
+
+
+def load_medqa_questions(
+    _config: DataGenerationConfig,
+    question_lookup: Optional[Dict[str, str]] = None,
+) -> List[QuestionData]:
+    """Load MedQA-USMLE 4-option questions (train split).
+
+    Schema: sent1 (stem), sent2 (continuation, often empty), ending0–ending3
+    (choices), label (int 0–3).
+    """
+    logger.info("Loading MedQA from openlifescienceai/MedQA-USMLE-4-options-hf")
+    dataset = load_dataset("openlifescienceai/MedQA-USMLE-4-options-hf", split="train")
+
+    questions = []
+    for item in dataset:
+        # Combine sent1 + sent2 into the question stem; sent2 is usually empty
+        stem = item["sent1"]
+        if item.get("sent2"):
+            stem = f"{stem} {item['sent2']}".strip()
+
+        choices = [item[f"ending{i}"] for i in range(4)]
+        correct_answer = CHOICE_LABELS[item["label"]]
+
+        formatted = format_question(stem, choices)
+        q_hash = _resolve_hash(formatted, stem, question_lookup)
+
+        questions.append(
+            QuestionData(
+                question_hash=q_hash,
+                question=stem,
+                choices=choices,
+                correct_answer=correct_answer,
+                formatted_question=formatted,
+                category="medqa",
+            )
+        )
+
+    questions = random.sample(questions, min(2000, len(questions)))
+    logger.info(f"Loaded {len(questions)} MedQA questions (randomly sampled from full train split)")
+    return questions
+
+
 def load_dataset_questions(config: DataGenerationConfig) -> List[QuestionData]:
     """Load questions from the specified dataset."""
     question_lookup = None
     if config.existing_responses_dir:
         question_lookup = build_question_id_lookup(config.existing_responses_dir)
 
-    if config.dataset_name.lower() == "gpqa":
+    name = config.dataset_name.lower()
+    if name == "gpqa":
         questions = load_gpqa_questions(config, question_lookup)
-    elif config.dataset_name.lower() == "mmlu":
+    elif name == "mmlu":
         questions = load_mmlu_questions(config, question_lookup)
+    elif name == "arc-easy":
+        questions = load_arc_questions(config, "ARC-Easy", question_lookup)
+    elif name == "arc-challenge":
+        questions = load_arc_questions(config, "ARC-Challenge", question_lookup)
+    elif name == "medqa":
+        questions = load_medqa_questions(config, question_lookup)
     else:
-        raise ValueError(f"Unknown dataset: {config.dataset_name}. Expected 'gpqa' or 'mmlu'")
+        raise ValueError(
+            f"Unknown dataset: {config.dataset_name!r}. "
+            "Expected one of: 'gpqa', 'mmlu', 'arc-easy', 'arc-challenge', 'medqa'"
+        )
 
     if config.limit is not None:
         questions = questions[:config.limit]
