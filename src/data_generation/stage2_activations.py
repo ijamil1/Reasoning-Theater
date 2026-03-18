@@ -89,7 +89,8 @@ def harvest_activations(
         desc = f"Shard {shard_idx + 1}/{total_shards}"
     elif layer_idx is not None:
         desc = f"Layer {layer_idx}"
-
+    
+    logger.info("Harvesting activations..")
     for response_path in tqdm(response_files, desc=desc):
         question_hash = response_path.stem
 
