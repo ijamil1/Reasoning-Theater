@@ -1,5 +1,5 @@
 """
-Inspect all six datasets from HuggingFace in the difficulty ladder.
+Inspect all four datasets from HuggingFace in the difficulty ladder.
 Run with: uv run --no-project python dataset_prep/inspect_datasets.py
 """
 
@@ -36,13 +36,6 @@ def inspect(name: str, dataset) -> None:
             preview = preview[:117] + "..."
         print(f"    {k!r:<35} {preview}")
 
-
-# ---------------------------------------------------------------------------
-# ARC-Easy  (test split)
-# ---------------------------------------------------------------------------
-print_section("ARC-Easy  —  allenai/ai2_arc  [ARC-Easy, test]")
-arc_easy = load_dataset("allenai/ai2_arc", "ARC-Easy", split="test")
-inspect_arc("ARC-Easy", arc_easy)
 
 # ---------------------------------------------------------------------------
 # MMLU-Redux 2.0  (existing pipeline: edinburgh-dawg/mmlu-redux-2.0, all 57

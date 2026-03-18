@@ -8,10 +8,7 @@ ROOT_DIR="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
 
 # One distinct dataset per model
 YAMLS=(
-    "${ROOT_DIR}/experiments/deepseek_r1_llama_8b/arc_easy_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_14b/mmlu_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/arc_challenge_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_llama_70b/medqa_datagen.yaml"
+    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_datagen.yaml"
     "${ROOT_DIR}/experiments/gpt_oss_120b/gpqa_datagen.yaml"
 )
 

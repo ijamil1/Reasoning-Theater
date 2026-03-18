@@ -1,6 +1,6 @@
 # Reasoning Theater: Disentangling Model Beliefs from Chain-of-Thought
 
-This is a fork of the codebase for the paper ["Reasoning Theater: Disentangling Model Beliefs from Chain-of-Thought"](https://arxiv.org/abs/2603.05488). We are replicating and verifying the original results, and extending the work along three axes: a five-dataset difficulty ladder, a probe generalizability analysis across datasets, and a probe architecture comparison.
+This is a fork of the codebase for the paper ["Reasoning Theater: Disentangling Model Beliefs from Chain-of-Thought"](https://arxiv.org/abs/2603.05488). We are replicating and verifying the original results, and extending the work along four axes: a four-dataset difficulty ladder, probe architecture / training process variations, probe generalizability across datasets, and CoT monitor LLM variation.
 
 **Original paper:** https://arxiv.org/abs/2603.05488
 **Original interactive app:** https://reasoning-theater.streamlit.app/
@@ -30,21 +30,37 @@ The pipeline has two phases:
 
 ### Example 1: Our experimental setup (per-model runner scripts)
 
-Each model runs on its own machine. Per-model runner scripts in `scripts/` loop over all five dataset configs for that model and call `run_datagen.sh both --layer <final_layer>`, harvesting only the final layer's activations.
+Each model runs on its own machine. Per-model runner scripts in `scripts/` loop over all four dataset configs for that model and call `run_datagen.sh both --layer <final_layer>`, harvesting only the final layer's activations.
 
 ```
 experiments/
-  deepseek_r1_llama_8b/      # one yaml per dataset
-    arc_easy_datagen.yaml
+  deepseek_r1_qwen_32b/      # one yaml per dataset
     mmlu_datagen.yaml
     arc_challenge_datagen.yaml
     medqa_datagen.yaml
     gpqa_datagen.yaml
-  deepseek_r1_qwen_14b/
-  deepseek_r1_qwen_32b/
-  deepseek_r1_llama_70b/
   gpt_oss_120b/
+    mmlu_datagen.yaml
+    arc_challenge_datagen.yaml
+    medqa_datagen.yaml
+    gpqa_datagen.yaml
 ```
+
+
+> **IMPORTANT — Clone the repo to volume disk.** Stage 2 of the data generation flow writes large `.pt` activation tensors to `data/` relative to wherever the repo is cloned. On RunPod (and similar platforms), container disk is small and ephemeral; volume disk is large and persistent. Clone the repo onto a **Network Volume** so that `data/` lands on persistent storage that survives pod termination.
+>
+> See [docs/runpod_network_volume_workflow.md](docs/runpod_network_volume_workflow.md) for the full setup guide. 
+
+
+#### 0. Install uv and clone repo into network volume
+
+cd /runpod-volume
+
+curl -LsSf https://astral.sh/uv/install.sh | sh OR wget -qO- https://astral.sh/uv/install.sh | sh
+
+git clone https://github.com/ijamil1/Reasoning-Theater.git
+cd Reasoning-Theater
+
 
 #### 1. Install dependencies
 
@@ -64,7 +80,7 @@ hf auth login
 
 #### 3. Create directories for model weight storage
 
-Check available disk space, then create the cache directories vLLM will use when downloading model weights:
+Check available volume disk space, then create the cache directories vLLM will use when downloading model weights:
 
 ```bash
 df -h
@@ -80,62 +96,35 @@ export TRANSFORMERS_CACHE=/workspace/hf_cache/transformers
 export TMPDIR=/workspace/tmp
 ```
 
+NOTE: the above setup will download model wts to ephemeral volume disk.
+
 #### 4. Run data generation
 
 To run data generation for a given model, execute its runner script on the appropriate machine:
 
 ```bash
-# DeepSeek-R1-Distill-Llama-8B (1x A100 80GB)
-bash scripts/run_datagen_deepseek_r1_llama_8b.sh
-
-# DeepSeek-R1-Distill-Qwen-14B (1x A100 80GB)
-bash scripts/run_datagen_deepseek_r1_qwen_14b.sh
-
-# DeepSeek-R1-Distill-Qwen-32B (2x A100 80GB)
+# DeepSeek-R1-Distill-Qwen-32B (2x A100 80GB with >= 70 GB ephemeral volume disk)
 bash scripts/run_datagen_deepseek_r1_qwen_32b.sh
 
-# DeepSeek-R1-Distill-Llama-70B (4x A100 80GB or 2x B200)
-bash scripts/run_datagen_deepseek_r1_llama_70b.sh
-
-# GPT-OSS 120B (4x A100 80GB or equivalent)
+# GPT-OSS 120B (4x A100 80GB with >= 250 GB ephemeral volume disk)
 bash scripts/run_datagen_gpt_oss_120b.sh
 ```
 
 Each script runs both stages sequentially for each dataset — Stage 1 generates rollouts via vLLM, Stage 2 harvests final-layer hidden states via nnsight. Outputs land in `data/<model>/<dataset>/` relative to the repo root.
 
-> **IMPORTANT — Clone the repo to volume disk.** Stage 2 writes large `.pt` activation tensors to `data/` relative to wherever the repo is cloned. On RunPod (and similar platforms), container disk is small and ephemeral; volume disk is large and persistent. Clone the repo onto a **Network Volume** so that `data/` lands on persistent storage that survives pod termination.
->
-> See [docs/runpod_network_volume_workflow.md](docs/runpod_network_volume_workflow.md) for the full setup guide, including how to create a volume, point HF caches to it, and choose between sequential and parallel runs.
->
-> ```bash
-> cd /runpod-volume
-> git clone <repo-url>
-> cd Reasoning-Theater
-> ```
-
 #### Estimated Stage 2 `.pt` activation file sizes
 
 Sizes are for bfloat16 tensors over reasoning-trace tokens only (`hidden_dim × seq_len × 2 bytes`). Sequence length estimated at 8192 tokens average; MedQA capped at 2000 randomly sampled questions.
 
-| Model | ARC-Easy (2369q) | MMLU (5330q) | ARC-Challenge (1168q) | MedQA (2000q) | GPQA (198q) | **Total** |
-|---|---|---|---|---|---|---|
-| Llama-8B (d=4096) | ~30 GB | ~67 GB | ~15 GB | ~25 GB | ~2.5 GB | **~140 GB** |
-| Qwen-14B (d=5120) | ~37 GB | ~83 GB | ~18 GB | ~31 GB | ~3 GB | **~172 GB** |
-| Qwen-32B (d=5120) | ~37 GB | ~83 GB | ~18 GB | ~31 GB | ~3 GB | **~172 GB** |
-| Llama-70B (d=8192) | ~60 GB | ~133 GB | ~29 GB | ~50 GB | ~5 GB | **~277 GB** |
-| GPT-OSS-120B (d=4096) | ~30 GB | ~67 GB | ~15 GB | ~25 GB | ~2.5 GB | **~140 GB** |
+| Model | MMLU (5330q) | ARC-Challenge (1168q) | MedQA (2000q) | GPQA (198q) | **Total** |
+|---|---|---|---|---|---|
+| Qwen-32B (d=5120) | ~83 GB | ~18 GB | ~31 GB | ~3 GB | **~135 GB** |
+| GPT-OSS-120B (d=4096) | ~67 GB | ~15 GB | ~25 GB | ~2.5 GB | **~110 GB** |
 
-Ensure each machine's volume disk has at least **300 GB free** before starting data generation. Run `df -h /workspace` to check.
+Ensure the  machine's network volume (persistent) disk has ~ **500 GB free** before starting data generation (needs to account for repo size + stage 1 outputs + stage 2 ouputs). 
 
-**After data generation:** Each machine will have a `data/` folder containing one subdirectory per dataset for that model. Copy the entire `data/` directory from each remote machine to your local machine before running analysis:
-
-```bash
-rsync -avz --progress user@remote-host:/path/to/repo/data/ /local/path/to/repo/data/
-```
-
-Run this for each of the five machines and merge into a single local `data/` directory.
-
-Then run the analysis pipeline:
+**After data generation:** 
+Run the analysis pipeline:
 
 ```bash
 bash scripts/run_pipeline.sh experiments/example_analysis.yaml

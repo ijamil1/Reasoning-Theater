@@ -10,11 +10,8 @@ Container disk and pod volumes are wiped on pod termination. Network Volumes are
 
 - A Network Volume can only be attached to **one running pod at a time**.
 - A Network Volume must be in the **same region** as the pod it is attached to.
-- Because of the one-pod-at-a-time constraint, the five model runs must either:
+- Because of the one-pod-at-a-time constraint, the 2 model runs must:
   - Run **sequentially** on a single machine sharing one volume, or
-  - Run **in parallel** on five separate machines, each with its own volume.
-
-See [Parallel vs. sequential](#parallel-vs-sequential) below.
 
 ---
 
@@ -26,7 +23,7 @@ In the RunPod console:
 
 1. Go to **Storage → Network Volumes → New Network Volume**.
 2. Choose a **region** — must match the region of the pods you will launch.
-3. Set **size** — use the table in the README as a guide. 300 GB covers one model; 1.5 TB covers all five models sequentially on one volume.
+3. Set **size** — use the README as a guide.
 4. Give it a name (e.g. `reasoning-theater-data`).
 
 The volume begins billing at ~$0.07/GB/month from creation. Delete it when you no longer need the data.
@@ -37,24 +34,14 @@ When creating a pod:
 
 1. Select your GPU template (A100 80GB, B200, etc.).
 2. Under **Volumes**, select your Network Volume. It will be mounted at `/runpod-volume/`.
-3. Set **container disk** to the minimum (16–20 GB) — model weights and data will live on the Network Volume, not container disk.
+3. Set **container disk** — model data will live on the Network Volume, not container disk. But, model weights will likely live on container disk.
 
 ### 3. Set up the environment on the Network Volume
 
 ```bash
 # Verify the volume is mounted
 df -h /runpod-volume
-
-# Point all HuggingFace / temp caches to the volume
-export HF_HOME=/runpod-volume/hf_cache
-export HUGGINGFACE_HUB_CACHE=/runpod-volume/hf_cache/hub
-export TRANSFORMERS_CACHE=/runpod-volume/hf_cache/transformers
-export TMPDIR=/runpod-volume/tmp
-
-mkdir -p $HF_HOME $HUGGINGFACE_HUB_CACHE $TRANSFORMERS_CACHE $TMPDIR
 ```
-
-Pointing HF caches to the volume means model weights are also persistent — subsequent pod launches for the same model skip re-downloading weights.
 
 ### 4. Clone the repo onto the Network Volume
 
@@ -98,34 +85,13 @@ Launch a new pod in the same region, attach the same Network Volume. The repo, w
 
 ---
 
-## Parallel vs. sequential
-
-### Sequential (one volume, one machine at a time)
+## Sequential (one volume, one machine at a time)
 
 Simplest setup. Run all five models one after another on the same volume.
 
 - 1 Network Volume (~1.5 TB to be safe)
 - 1 pod at a time (different GPU config per model)
 - Total wall-clock time: sum of all five runs
-
-### Parallel (five volumes, five machines simultaneously)
-
-Run all five models at the same time, one pod per model.
-
-- 5 Network Volumes (~300 GB each, same region)
-- 5 pods running simultaneously
-- After all runs complete, consolidate data:
-
-```bash
-# On a CPU-only pod or local machine with all 5 volumes accessible:
-# (Volumes cannot be attached to two pods simultaneously, so consolidate sequentially)
-rsync -av /runpod-volume-8b/Reasoning-Theater/data/   /runpod-volume-main/Reasoning-Theater/data/
-rsync -av /runpod-volume-14b/Reasoning-Theater/data/  /runpod-volume-main/Reasoning-Theater/data/
-rsync -av /runpod-volume-32b/Reasoning-Theater/data/  /runpod-volume-main/Reasoning-Theater/data/
-rsync -av /runpod-volume-70b/Reasoning-Theater/data/  /runpod-volume-main/Reasoning-Theater/data/
-```
-
-Or transfer each volume's `data/` to S3 and pull everything down to one place for analysis.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan extends the findings of *Reasoning Theater: Disentangling Model Beliefs from Chain-of-Thought* (arxiv: 2603.05488). The paper introduces attention probes trained on transformer hidden states to predict a model's final answer from its reasoning trace, and defines **performativity** as the gap between what the model's internal representations encode and what its chain-of-thought expresses. We extend the paper along three primary axes: a richer difficulty ladder across five datasets, a generalizability analysis of probes across datasets, and a probe architecture comparison. Several secondary analyses follow from the data collected for these primary ideas.
+This plan extends the findings of *Reasoning Theater: Disentangling Model Beliefs from Chain-of-Thought* (arxiv: 2603.05488). The paper introduces attention probes trained on transformer hidden states to predict a model's final answer from its reasoning trace, and defines **performativity** as the gap between what the model's internal representations encode and what its chain-of-thought expresses. We extend the paper along four primary axes: a four-dataset difficulty ladder, probe architecture / training process variations, probe generalizability across datasets, and CoT monitor LLM variation. Several secondary analyses follow from the data collected for these primary ideas.
 
 The existing codebase implements the paper's pipeline and is the foundation for all work here. Most phases require targeted modifications rather than new infrastructure.
 
@@ -10,26 +10,24 @@ The existing codebase implements the paper's pipeline and is the foundation for 
 
 ## Dataset Ladder
 
-Five datasets ordered easiest to hardest for frontier-scale models:
+Four datasets ordered easiest to hardest for frontier-scale models:
 
 | Dataset | HuggingFace Path | Notes |
 |---|---|---|
-| ARC-Easy | `allenai/ai2_arc` | config `ARC-Easy` |
-| MMLU | existing pipeline | test split, 5700 questions (100 per 57 subjects); used as full pool for our own train/val/test splits |
+| MMLU | existing pipeline | test split, ~5330 questions; used as full pool for our own train/val/test splits |
 | ARC-Challenge | `allenai/ai2_arc` | config `ARC-Challenge` |
-| MedQA | `openlifescienceai/MedQA-USMLE-4-options-hf` | — |
+| MedQA | `openlifescienceai/MedQA-USMLE-4-options-hf` | 2000 randomly sampled from train split |
 | GPQA-Diamond | existing pipeline | 198 rows total, no canonical test split; full pool used for our own train/val/test splits |
 
 **Notes on the ladder:**
-- Sample sizes are TBD and will be finalized during Phase 0 after dataset inspection. GPQA-Diamond's 198 rows is a hard ceiling that constrains split sizes and may affect statistical power — if comparable split sizes across datasets are desired, GPQA-Diamond sets the floor.
-- ARC-Challenge is the most expendable if trimming the transfer matrix from 5×5 to 4×4, since MedQA already occupies a similar difficulty band.
+- GPQA-Diamond's 198 rows is a hard ceiling that constrains split sizes and may affect statistical power — if comparable split sizes across datasets are desired, GPQA-Diamond sets the floor.
 - Dataset-specific formatting is handled separately and is not part of this plan.
 
 ---
 
 ## Phase 0: Dataset Construction
 
-Load all five datasets from HuggingFace using the paths and configs above. Produce a unified question bank with consistent fields: `dataset`, `question_id`, `question`, `choices` (A/B/C/D), `correct_answer` (letter).
+Load all five datasets from HuggingFace using the paths and configs above. Produce a unified question bank with consistent fields: `dataset`, `question_id`, `question`, `choices` (A/B/C/D), `correct_answer` (letter). Run on two models: DeepSeek-R1-Distill-Qwen-32B and GPT-OSS-120B.
 
 Each dataset gets its own folder for all downstream outputs — Stage 1 JSONs, Stage 2 `.pt` files, and step-level CSVs — mirroring the structure of the existing pipeline but namespaced by dataset.
 
@@ -95,13 +93,13 @@ Evaluate all variants using the cumsum trick for simultaneous predictions at eve
 
 ## Phase 4: Generalizability Matrix (Idea 2)
 
-Scale probe training to all (model, dataset) training pairs using the architecture(s) selected in Phase 3. For each trained probe, evaluate on all five datasets' test splits.
+Scale probe training to all (model, dataset) training pairs using the architecture(s) selected in Phase 3. For each trained probe, evaluate on all four datasets' test splits.
 
 **Degradation metric:**
 
 > Δ(i→j) = Accuracy(train=j, eval=j) − Accuracy(train=i, eval=j)
 
-This produces a **5×5 transfer matrix per model** where the diagonal is always 0 by definition and off-diagonal entries represent accuracy loss from training on a different dataset distribution. Large off-diagonal values indicate poor transfer; small values indicate the probe has learned something general about how the model encodes its answer rather than something dataset-specific.
+This produces a **4×4 transfer matrix per model** where the diagonal is always 0 by definition and off-diagonal entries represent accuracy loss from training on a different dataset distribution. Large off-diagonal values indicate poor transfer; small values indicate the probe has learned something general about how the model encodes its answer rather than something dataset-specific.
 
 **Additional analysis:** Test whether Δ(i→j) correlates with the difficulty distance between datasets i and j, measured as the difference in model accuracy between dataset i and dataset j. If training on an easy dataset transfers poorly to a hard one but not vice versa, this suggests the probe is learning the model's confident-answer regime specifically — which connects directly to Idea 1.
 
@@ -135,7 +133,7 @@ With probe predictions, CoT monitor predictions, and forced answer predictions a
 
 **Null hypothesis:** The performativity gap is significantly lower on hard datasets than on easy ones.
 
-**Test:** Spearman rank correlation between difficulty rank and mean performativity gap (averaged over the full trace) across five datasets and multiple models.
+**Test:** Spearman rank correlation between difficulty rank and mean performativity gap (averaged over the full trace) across four datasets and two models.
 
 ### Confounds to Control For
 

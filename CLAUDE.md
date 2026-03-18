@@ -10,18 +10,19 @@ The user is extending the original paper's codebase with new experiments describ
 
 ## Research Plan Summary (`research_plan.md`)
 
-The plan extends the paper along three primary axes:
+The plan extends the paper along four primary axes:
 
-1. **Dataset difficulty ladder** (5 datasets, easiest → hardest):
-   - ARC-Easy (`allenai/ai2_arc`, config `ARC-Easy`)
-   - MMLU (existing pipeline, ~5700 questions)
+1. **Dataset difficulty ladder** (4 datasets, easiest → hardest):
+   - MMLU (existing pipeline, ~5330 questions)
    - ARC-Challenge (`allenai/ai2_arc`, config `ARC-Challenge`)
-   - MedQA (`openlifescienceai/MedQA-USMLE-4-options-hf`)
+   - MedQA (`openlifescienceai/MedQA-USMLE-4-options-hf`, 2000 randomly sampled)
    - GPQA-Diamond (existing pipeline, 198 rows — hard ceiling)
 
-2. **Probe generalizability** across datasets (5×5 transfer matrix, diagonal = 0)
+2. **Probe generalizability** across datasets (4×4 transfer matrix, diagonal = 0)
 
-3. **Probe architecture comparison**: last-token linear, mean-pool linear, mean-pool MLP, attention probe (paper's method)
+3. **Probe architecture / training process comparison**: last-token linear, mean-pool linear, mean-pool MLP, attention probe (paper's method)
+
+4. **CoT monitor LLM variation**: test different external LLMs for the CoT monitor stage
 
 **Phase order:**
 | Phase | What | Dependencies |
