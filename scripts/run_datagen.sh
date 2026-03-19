@@ -71,6 +71,12 @@ generate_responses(config)
 " "${CFG_PATH}"
 fi
 
+if [[ "${STAGE}" == "both" ]]; then
+    echo "=== Waiting for GPU memory to clear after Stage 1 ==="
+    sleep 5
+    nvidia-smi | grep -E "MiB|%"
+fi
+
 if [[ "${STAGE}" == "stage2" || "${STAGE}" == "both" ]]; then
     echo "=== Stage 2: Activation Harvesting ==="
     STAGE2_ARGS=""

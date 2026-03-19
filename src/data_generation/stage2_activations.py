@@ -40,8 +40,9 @@ def extract_layer_activations(
     layer_idx: int,
 ) -> torch.Tensor:
     """Extract hidden states from a single layer using nnsight."""
-    with model.trace(input_ids, scan=False, validate=False):
-        acts = model.model.layers[layer_idx].output[0].save()
+    with torch.no_grad():
+        with model.trace(input_ids, scan=False, validate=False):
+            acts = model.model.layers[layer_idx].output[0].save()
 
     return acts.squeeze(0).cpu()
 
@@ -125,6 +126,7 @@ def harvest_activations(
                 output_path = question_output_dir / f"{num_tokens}_tokens.pt"
                 torch.save(acts_cpu, output_path)
 
+            torch.cuda.empty_cache()
             processed += 1
 
         except Exception as e:
