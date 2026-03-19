@@ -22,8 +22,6 @@ The plan extends the paper along four primary axes:
 
 3. **Probe architecture / training process comparison**: last-token linear, mean-pool linear, mean-pool MLP, attention probe (paper's method)
 
-4. **CoT monitor LLM variation**: test different external LLMs for the CoT monitor stage
-
 **Phase order:**
 | Phase | What | Dependencies |
 |---|---|---|
@@ -32,13 +30,12 @@ The plan extends the paper along four primary axes:
 | 2 | Replication baseline (MMLU only) | Phase 1 |
 | 3 | Probe architecture comparison | Phase 2 |
 | 4 | Generalizability matrix | Phase 3 |
-| 5 | CoT monitor + forced answer eval | Phase 1 |
-| 6 | Difficulty vs. performativity | Phases 3, 4, 5 |
+| 6 | Difficulty vs. performativity | Phases 3, 4 |
 | 7 | Temporal belief tracking (post-hoc) | Phase 6 |
 | 8 | Calibration and early exit (post-hoc) | Phase 6 |
 | 9 | Training process ablations | Phase 3 |
 
-Phases 5 and 9 can run in parallel with Phase 4. Phases 7 and 8 can run in parallel after Phase 6.
+Phase 9 can run in parallel with Phase 4. Phases 7 and 8 can run in parallel after Phase 6.
 
 ---
 

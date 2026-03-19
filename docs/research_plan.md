@@ -109,25 +109,9 @@ This produces a **4×4 transfer matrix per model** where the diagonal is always 
 
 ---
 
-## Phase 5: CoT Monitor and Forced Answer Evaluation
-
-This phase has no dependency on Phase 4 and can run in parallel with it.
-
-### CoT Monitor (API calls, no local compute)
-
-For each question, build cumulative prompts at each step boundary and send to Gemini Flash via OpenRouter concurrently, matching the existing pipeline. The monitor predicts which answer the generating model will output — not the answer itself.
-
-**Monitor ablation:** Run multiple configurations in parallel — vary the monitor model and the prompt. Record monitor model and prompt variant using distinct `layer_idx` values (e.g., -2, -3, -4) or a dedicated `monitor_variant` column in the step-level CSVs.
-
-### Forced Answer Evaluation (vLLM subprocess)
-
-Reload model weights. For each question × each step boundary, construct a prompt cutting off reasoning at that step and forcing immediate answer generation. Batch all prompts, generate one token each, collect logprobs for A/B/C/D. Inject results into step-level CSVs as `layer_idx = -1`. Process exits, VRAM freed.
-
----
-
 ## Phase 6: Difficulty vs. Performativity (Idea 1)
 
-With probe predictions, CoT monitor predictions, and forced answer predictions all in the step-level CSVs, compute the performativity gap per dataset per model. The performativity gap at each timestep is the difference in accuracy between the probe and the CoT monitor at that prefix position.
+With probe predictions and forced answer predictions in the step-level CSVs, compute the performativity gap per dataset per model. The performativity gap at each timestep is the difference in accuracy between the probe and the forced answer at that prefix position.
 
 **Difficulty proxy:** Rank datasets by model accuracy. This is model-relative by design — you are testing whether a model's own subjective difficulty predicts its own performativity, not whether objective task hardness does.
 
@@ -194,12 +178,11 @@ Report sensitivity of the main results (probe accuracy curve shape and performat
 | 2 | Replication baseline | Phase 1 |
 | 3 | Probe architecture comparison | Phase 2 |
 | 4 | Generalizability matrix | Phase 3 |
-| 5 | CoT monitor + forced answer evaluation | Phase 1 |
-| 6 | Difficulty vs. performativity | Phases 3, 4, 5 |
+| 6 | Difficulty vs. performativity | Phases 3, 4 |
 | 7 | Temporal belief tracking | Phase 6 |
 | 8 | Calibration and early exit | Phase 6 |
 | 9 | Training process ablations | Phase 3 |
 
 **Parallelism:**
-- Phases 5 and 9 can run in parallel with Phase 4.
+- Phase 9 can run in parallel with Phase 4.
 - Phases 7 and 8 can run in parallel with each other after Phase 6.
