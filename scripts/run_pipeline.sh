@@ -86,7 +86,8 @@ if [[ "${PLOTS_ENABLED}" == "True" ]]; then
     uv run python -m src.analysis.plots \
         --results_dir "${RUN_ROOT}" \
         --model_name "${MODEL_NAME}" \
-        --dataset_name "${DATASET_NAME}"
+        --dataset_name "${DATASET_NAME}" \
+        --parse_probe_output
 else
     echo "Skipping plots (disabled)"
 fi
