@@ -30,6 +30,9 @@ def generate_responses(config: DataGenerationConfig) -> None:
     if not remaining_questions:
         logger.info("All questions already processed")
         return
+    if config.dataset_name == 'medqa' and len(existing_files) >= 2000:
+        logger.info("All questions already processed")
+        return
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_id)
 
