@@ -1,0 +1,50 @@
+run:
+  run_name: gpqa_gpt_oss_120b
+  results_dir: results
+  seed: 42
+
+data:
+  responses_dir: data/gpt_oss_120b/gpqa/stage1_responses
+  activations_dir: data/gpt_oss_120b/gpqa/stage2_activations
+  tokenizer_model: openai/gpt-oss-120b
+  split_path: null
+  dataset_name: gpqa
+
+setup:
+  enabled: true
+  train_val_test_split_ratio: [0.0, 0.0, 1.0]
+
+probe:
+  enabled: true
+  train: false
+  eval: true
+  num_layers: 36
+  selected_layer: 35
+  probe_type: attention
+  label_type: model_ans
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.01
+  num_epochs: 10
+
+forced_answer:
+  enabled: true
+  generate: true
+  tensor_parallel_size: 4
+  batch_size: 100
+
+cot_monitor:
+  enabled: true
+  model: google/gemini-2.5-flash
+  api_key_env: OPENROUTER_API_KEY
+  max_tokens: 8
+  temperature: 0.0
+  per_question_concurrency: 8
+
+plots:
+  enabled: true
+  model_name: GPT-OSS-120B
+  dataset_name: GPQA-Diamond
+
+inflections:
+  enabled: false

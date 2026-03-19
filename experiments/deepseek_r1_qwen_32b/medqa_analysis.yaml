@@ -1,0 +1,49 @@
+run:
+  run_name: medqa_deepseek_r1_qwen_32b
+  results_dir: results
+  seed: 42
+
+data:
+  responses_dir: data/deepseek_r1_qwen_32b/medqa/stage1_responses
+  activations_dir: data/deepseek_r1_qwen_32b/medqa/stage2_activations
+  tokenizer_model: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+  split_path: null
+  dataset_name: medqa
+
+setup:
+  enabled: true
+
+probe:
+  enabled: true
+  train: true
+  eval: true
+  num_layers: 64
+  selected_layer: 63
+  probe_type: attention
+  label_type: model_ans
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.01
+  num_epochs: 10
+
+forced_answer:
+  enabled: true
+  generate: true
+  tensor_parallel_size: 2
+  batch_size: 100
+
+cot_monitor:
+  enabled: true
+  model: google/gemini-2.5-flash
+  api_key_env: OPENROUTER_API_KEY
+  max_tokens: 8
+  temperature: 0.0
+  per_question_concurrency: 8
+
+plots:
+  enabled: true
+  model_name: DeepSeek-R1-Distill-Qwen-32B
+  dataset_name: MedQA
+
+inflections:
+  enabled: false

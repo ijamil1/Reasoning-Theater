@@ -30,6 +30,16 @@ def generate_forced_completions(cfg: ExperimentConfig) -> Path:
     if output_path is None:
         output_path = cfg.resolved_paths()["root"] / "forced_answer_completions.json"
 
+    split_path = cfg.data.split_path or cfg.resolved_paths()["root"] / "train_val_test_split.json"
+    test_set_hashes = None
+    if Path(split_path).exists():
+        with Path(split_path).open("r", encoding="utf-8") as f:
+            split_data = json.load(f)
+        test_set_hashes = set(str(h) for h in split_data.get("test", []))
+        logger.info(f"Filtering generation to {len(test_set_hashes)} test set questions")
+    else:
+        logger.warning("No split file found - generating for all questions")
+
     response_files = sorted(Path(responses_dir).glob("*.json"))
     logger.info(f"Found {len(response_files)} response files")
 
@@ -63,6 +73,8 @@ def generate_forced_completions(cfg: ExperimentConfig) -> Path:
 
     for response_path in response_files:
         question_hash = response_path.stem
+        if test_set_hashes is not None and question_hash not in test_set_hashes:
+            continue
         if question_hash in existing_results:
             continue
 

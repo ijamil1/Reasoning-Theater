@@ -187,7 +187,7 @@ class ExperimentConfig:
             "metadata": (root / "predictions_metadata.csv").resolve(),
             "token_level": (root / "token_level").resolve(),
             "step_level": (root / "step_level").resolve(),
-            "models": (root / "models").resolve(),
+            "models": (self.run.results_dir / "models" / self.run.run_name).resolve(),
             "cot_monitor_sequences": (self.cot_monitor.sequences_path or root / "cot_monitor_sequences.json").resolve(),
             "cot_monitor_completions": (self.cot_monitor.completions_path or root / "cot_monitor_completions.json").resolve(),
             "normalization_stats": (root / "normalization_stats.json").resolve(),

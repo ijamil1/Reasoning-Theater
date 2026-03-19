@@ -52,11 +52,11 @@ PY
     )
 
     for LAYER in $(uv run python -c "import json; [print(l) for l in json.loads('${LAYERS_JSON}')]"); do
-        echo "Training probe for layer ${LAYER}..."
+        echo "Training and/or evaluating probe for layer ${LAYER}..."
         uv run python -m src.analysis.run_probing --config "${CFG_PATH}" --layer "${LAYER}"
     done
 else
-    echo "Skipping probe training (disabled)"
+    echo "Skipping probe training and eval (disabled)"
 fi
 
 # Forced answering

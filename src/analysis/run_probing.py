@@ -368,7 +368,7 @@ def load_checkpoint(model: AttentionProbe, cfg: ExperimentConfig, layer_idx: int
     if ckpt is None:
         if cfg.probe.reuse_run_root is not None:
             reuse_root = Path(cfg.probe.reuse_run_root).resolve()
-            ckpt = reuse_root / "models" / f"probe_layer{layer_idx}.pth"
+            ckpt = reuse_root.parent / "models" / reuse_root.name / f"probe_layer{layer_idx}.pth"
             logger.info(f"Using reuse_run_root: {reuse_root}")
         else:
             ckpt = cfg.resolved_paths()["models"] / f"probe_layer{layer_idx}.pth"
