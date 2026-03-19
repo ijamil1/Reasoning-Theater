@@ -27,5 +27,5 @@ batch_sizes: [32, 64, 128]
 results:
   results_dir: results
   seed: 42
-  run_name_prefix: phase3
+  run_name_prefix: phase3_qwen_32b
   summary_csv: results/phase3_summary.csv
