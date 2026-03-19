@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import yaml
-from torch.utils.data import DataLoader
+
 
 # ---------------------------------------------------------------------------
 # Resolve project root so the script can be run from any working directory.
@@ -43,11 +43,9 @@ from src.analysis.experiment_config import (  # noqa: E402
 from src.analysis.run_probing import (  # noqa: E402
     AttentionMLPProbe,
     AttentionProbe,
-    ProbeDataset,
     RecencyWeightedLinearProbe,
     RecencyWeightedMLPProbe,
-    collate,
-    evaluate_accuracy,
+    evaluate_accuracy_averaged_over_positions,
     load_checkpoint,
     load_metadata,
     load_samples,
@@ -408,13 +406,9 @@ def main() -> None:
             load_checkpoint(model, cfg, layer_idx)
             model.to(device)
 
-            test_loader = DataLoader(
-                ProbeDataset(samples_test, cfg.probe.label_type, training=False),
-                batch_size=cfg.probe.batch_size,
-                shuffle=False,
-                collate_fn=collate,
+            test_acc = evaluate_accuracy_averaged_over_positions(
+                model, samples_test, device, cfg.probe.label_type
             )
-            test_acc = evaluate_accuracy(model, test_loader, device, cfg.probe.label_type)
             logger.info(f"Test accuracy: {test_acc * 100:.2f}%")
             grid_results[(probe_type, batch_size)] = test_acc
 

@@ -1,0 +1,34 @@
+datasets:
+  - name: mmlu
+    responses_dir: data/gpt_oss_120b/mmlu/stage1_responses
+    activations_dir: data/gpt_oss_120b/mmlu/stage2_activations
+  - name: arc_challenge
+    responses_dir: data/gpt_oss_120b/arc_challenge/stage1_responses
+    activations_dir: data/gpt_oss_120b/arc_challenge/stage2_activations
+  - name: medqa
+    responses_dir: data/gpt_oss_120b/medqa/stage1_responses
+    activations_dir: data/gpt_oss_120b/medqa/stage2_activations
+  - name: gpqa_diamond
+    responses_dir: data/gpt_oss_120b/gpqa_diamond/stage1_responses
+    activations_dir: data/gpt_oss_120b/gpqa_diamond/stage2_activations
+
+probe_base:
+  num_layers: 36
+  selected_layer: 35
+  probe_type: attention        # swap this to re-run with a different architecture
+  label_type: model_ans
+  batch_size: 64
+  num_epochs: 50
+  learning_rate: 0.005
+  weight_decay: 0.001
+  normalize_acts: true
+  mlp_hidden_dim: 32
+  recency_decay: 0.02
+  disable_tqdm: true
+
+results:
+  results_dir: results
+  seed: 42
+  run_name_prefix: phase4_gpt_oss_120b
+  summary_csv: results/phase4_gpt_oss_120b_summary.csv
+  tokenizer_model: openai/gpt-oss-120b

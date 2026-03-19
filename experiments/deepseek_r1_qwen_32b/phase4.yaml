@@ -1,0 +1,34 @@
+datasets:
+  - name: mmlu
+    responses_dir: data/deepseek_r1_qwen_32b/mmlu/stage1_responses
+    activations_dir: data/deepseek_r1_qwen_32b/mmlu/stage2_activations
+  - name: arc_challenge
+    responses_dir: data/deepseek_r1_qwen_32b/arc_challenge/stage1_responses
+    activations_dir: data/deepseek_r1_qwen_32b/arc_challenge/stage2_activations
+  - name: medqa
+    responses_dir: data/deepseek_r1_qwen_32b/medqa/stage1_responses
+    activations_dir: data/deepseek_r1_qwen_32b/medqa/stage2_activations
+  - name: gpqa_diamond
+    responses_dir: data/deepseek_r1_qwen_32b/gpqa_diamond/stage1_responses
+    activations_dir: data/deepseek_r1_qwen_32b/gpqa_diamond/stage2_activations
+
+probe_base:
+  num_layers: 64
+  selected_layer: 63
+  probe_type: attention        # swap this to re-run with a different architecture
+  label_type: model_ans
+  batch_size: 64
+  num_epochs: 50
+  learning_rate: 0.005         # paper value for distilled DeepSeek-R1 models
+  weight_decay: 0.001          # paper value
+  normalize_acts: true
+  mlp_hidden_dim: 32
+  recency_decay: 0.02
+  disable_tqdm: true
+
+results:
+  results_dir: results
+  seed: 42
+  run_name_prefix: phase4_qwen_32b
+  summary_csv: results/phase4_summary.csv
+  tokenizer_model: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B

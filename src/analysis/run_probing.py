@@ -932,6 +932,98 @@ def evaluate_accuracy(
     return correct / total if total > 0 else 0.0
 
 
+def _predict_all_positions(model: torch.nn.Module, activation_device: torch.Tensor) -> torch.Tensor:
+    """Return logits at every prefix position without writing any CSVs.
+
+    Uses the same cumsum / recursive trick as write_eval_outputs.
+    Returns a float32 tensor of shape [T, C].
+    """
+    weight_dtype = next(model.parameters()).dtype
+    eps = 1e-8
+
+    if isinstance(model, (RecencyWeightedLinearProbe, RecencyWeightedMLPProbe)):
+        alpha = math.exp(-model.decay)
+        act_fp32 = activation_device.to(torch.float32)
+        T, H = act_fp32.shape
+        weighted_sum = torch.zeros(H, dtype=torch.float32, device=activation_device.device)
+        weight_sum = 0.0
+        outs = []
+        for t in range(T):
+            weighted_sum = alpha * weighted_sum + act_fp32[t]
+            weight_sum = alpha * weight_sum + 1.0
+            pooled_t = (weighted_sum / (weight_sum + eps)).unsqueeze(0).to(weight_dtype)
+            if isinstance(model, RecencyWeightedMLPProbe):
+                out_t = model.down(model.relu(model.up(pooled_t)))
+            else:
+                out_t = model.linear(pooled_t)
+            outs.append(out_t.to(torch.float32))
+        return torch.cat(outs, dim=0)  # [T, C]
+
+    if isinstance(model, AttentionMLPProbe):
+        q_fp32 = model.q(activation_device).squeeze(-1).to(torch.float32)
+        act_fp32 = activation_device.to(torch.float32)
+        exp_logits = torch.exp(q_fp32 - q_fp32.max())
+        denom = torch.cumsum(exp_logits, dim=0)
+        weighted = torch.cumsum(exp_logits.unsqueeze(-1) * act_fp32, dim=0)
+        pooled_raw = (weighted / (denom.unsqueeze(-1) + eps)).to(weight_dtype)
+        return model.down(model.relu(model.up(pooled_raw))).to(torch.float32)  # [T, C]
+
+    # AttentionProbe (mlp=False or mlp=True)
+    q_fp32 = model.q(activation_device).squeeze(-1).to(torch.float32)
+    if model.mlp:
+        v_proj = model.v_down(model.v_relu(model.v_up(activation_device)))
+    else:
+        v_proj = model.v(activation_device)
+    v_fp32 = v_proj.to(torch.float32)
+    exp_logits = torch.exp(q_fp32 - q_fp32.max())
+    denom = torch.cumsum(exp_logits, dim=0)
+    weighted = torch.cumsum(exp_logits.unsqueeze(-1) * v_fp32, dim=0)
+    return (weighted / (denom.unsqueeze(-1) + eps))  # [T, C]
+
+
+_EVAL_FRACTIONS = [0.25, 0.50, 0.75, 0.90]
+
+
+def evaluate_accuracy_averaged_over_positions(
+    model: torch.nn.Module,
+    samples: List[Dict],
+    device: torch.device,
+    label_type: str = "model_ans",
+) -> float:
+    """Return accuracy averaged over four relative reasoning positions.
+
+    For each sample the probe is evaluated at the token positions closest to
+    25 %, 50 %, 75 %, and 90 % of the full reasoning trace using the cumsum /
+    recursive trick.  Accuracy is computed at each percentile (averaged across
+    questions) and then averaged uniformly across the four percentiles.
+    """
+    model.eval()
+    weight_dtype = next(model.parameters()).dtype
+    n = len(_EVAL_FRACTIONS)
+    correct = [0] * n
+    total = [0] * n
+
+    with torch.no_grad():
+        for sample in samples:
+            activation = sample["activation"].to(device=device, dtype=weight_dtype)
+            label = sample["label"]
+            T = activation.shape[0]
+            if T == 0:
+                continue
+
+            logits_all = _predict_all_positions(model, activation)  # [T, C]
+            preds = torch.argmax(logits_all, dim=-1)                 # [T]
+
+            for i, frac in enumerate(_EVAL_FRACTIONS):
+                idx = min(int(frac * T), T - 1)
+                correct[i] += int(preds[idx].item() == label)
+                total[i] += 1
+
+    accs = [correct[i] / total[i] if total[i] > 0 else float("nan") for i in range(n)]
+    valid = [a for a in accs if not math.isnan(a)]
+    return float(sum(valid) / len(valid)) if valid else 0.0
+
+
 def run_probing(cfg: ExperimentConfig, layer_override: int | None = None) -> None:
     logger.info("=== Starting probe training/evaluation ===")
     paths = cfg.resolved_paths()
