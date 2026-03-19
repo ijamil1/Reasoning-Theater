@@ -128,24 +128,9 @@ Run the analysis pipeline:
 
 ```bash
 bash scripts/run_pipeline.sh experiments/example_analysis.yaml
-```
 
-### Example 2: Full pipeline with all layer activations
+bash scripts/run_phase3.sh experiments/deepseek_r1_qwen_32b/phase3.yaml
 
-For multi-GPU setups, use `tensor_parallel_size` for vLLM inference and sharding for parallel activation harvesting. See `experiments/example_full_datagen.yaml` and `experiments/example_full_analysis.yaml` for the full configs.
-
-```bash
-# Stage 1: generate responses (uses tensor parallelism across 4 GPUs)
-bash scripts/run_datagen.sh experiments/example_full_datagen.yaml stage1
-
-# Stage 2: harvest activations in parallel across 4 jobs
-for i in 0 1 2 3; do
-  bash scripts/run_datagen.sh experiments/example_full_datagen.yaml stage2 --shard $i --total-shards 4 &
-done
-wait
-
-# Analysis: train probes for all layers, run all stages
-bash scripts/run_pipeline.sh experiments/example_full_analysis.yaml
 ```
 
 ### Reference

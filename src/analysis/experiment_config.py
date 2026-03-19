@@ -46,9 +46,10 @@ class ProbeConfig:
     weight_decay: float = 0.01
     num_epochs: int = 5
     mlp_hidden_dim: int = 32
+    recency_decay: float = 0.02  # Exponential decay rate for recency-weighted probes
     randomize_labels: bool = False
     disable_tqdm: bool = True
-    normalize_acts: bool = False  # Normalize activations per-layer (standardization)
+    normalize_acts: bool = True  # Normalize activations per-layer (standardization)
     recompute_norm_stats: bool = False  # Recompute normalization stats even if reuse_run_root is set
 
 
@@ -143,6 +144,7 @@ class ExperimentConfig:
             weight_decay=float(probe_raw.get("weight_decay", 0.01)),
             num_epochs=int(probe_raw.get("num_epochs", 5)),
             mlp_hidden_dim=int(probe_raw.get("mlp_hidden_dim", 32)),
+            recency_decay=float(probe_raw.get("recency_decay", 0.02)),
             randomize_labels=bool(probe_raw.get("randomize_labels", False)),
             disable_tqdm=bool(probe_raw.get("disable_tqdm", True)),
             normalize_acts=bool(probe_raw.get("normalize_acts", False)),

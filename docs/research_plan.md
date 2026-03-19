@@ -76,18 +76,18 @@ Train the attention probe on the MMLU train split for DeepSeek-R1 only. Evaluate
 
 ## Phase 3: Probe Architecture Comparison (Idea 3)
 
-Still on DeepSeek-R1 + MMLU only. Extend the probe training stage to support all four architectures, using the same training loop, cross-entropy loss against the model's final answer (not ground truth), random prefix truncation, and best-checkpoint-by-val-loss pattern throughout.
+Still on DeepSeek-R1 + MMLU only. Extend the probe training stage to support all five architectures, using the same training loop, cross-entropy loss against the model's final answer (not ground truth), random prefix truncation, and best-checkpoint-by-val-loss pattern throughout.
 
 The four architectures:
 
-- **Last-token linear probe**: take `h[T, :]` at the final token position of the prefix, apply linear layer + softmax over four classes.
-- **Mean-pool linear probe**: average `h[0:T, :]` across all token positions in the prefix, apply linear layer + softmax.
-- **Mean-pool MLP probe**: same mean pooling as above, followed by a two-layer MLP with ReLU non-linearity.
-- **Attention probe** (paper's method): attention-weighted pooling of hidden states as described in the paper, with a T ablation at 25%, 50%, 75%, and 100% of trace length as a hyperparameter on the prefix sampling range.
+- **Attention probe** (paper's method, baseline): learned attention-weighted pooling of hidden states. Expected to perform best.
+- **Recency-weighted linear probe**: weighted average of `h[0:T, :]` where weights decay exponentially with distance from the current token (i.e. more recent tokens get higher weight), followed by a linear layer + softmax. A structured alternative to uniform mean pooling that encodes the intuition that recent reasoning steps are more predictive of the final answer.
+- **Recency-weighted MLP probe**: same exponential recency weighting as above, but the resulting pooled vector is passed into a two-layer MLP with ReLU non-linearity rather than a linear layer. Tests whether a non-linear read-out on top of recency-weighted pooling recovers additional signal.
+- **Attention + MLP probe**: attention-weighted pooling (as in the attention probe) used as the aggregation mechanism, but the pooled vector is then passed through a two-layer MLP with ReLU non-linearity before the final classification layer. Tests whether the bottleneck in the attention probe is the linear read-out.
 
 Evaluate all variants using the cumsum trick for simultaneous predictions at every prefix length. Plot accuracy vs. relative reasoning position for each architecture.
 
-**Selection criteria for Phase 4+:** Likely carry forward the attention probe as the primary architecture and the last-token linear probe as a cheap baseline to report alongside. The last-token probe is particularly informative: if it matches the attention probe's accuracy, the model's belief is already crystallized in the final token's representation by the end of the trace, which is an interpretability finding in its own right.
+**Selection criteria for Phase 4+:** Carry forward the attention probe as the primary architecture. The recency-weighted linear probe serves as a structured baseline against the attention probe's learned weighting.
 
 ---
 

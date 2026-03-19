@@ -3,6 +3,7 @@ import csv
 import fcntl
 import json
 import logging
+import math
 import os
 import random
 import sys
@@ -66,19 +67,83 @@ class AttentionProbe(torch.nn.Module):
         return pooled
 
 
-class LinearProbe(torch.nn.Module):
-    """Linear probe using last-token pooling."""
-    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype) -> None:
+class RecencyWeightedLinearProbe(torch.nn.Module):
+    """Linear probe using exponentially decaying recency-weighted pooling.
+
+    Token t in a prefix of length L gets weight exp(-decay * (L-1-t)), so
+    the most recent token always has weight 1 (unnormalized) and earlier
+    tokens decay geometrically into the past.
+    """
+    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, decay: float = 0.02) -> None:
         super().__init__()
+        self.decay = decay
         self.linear = torch.nn.Linear(in_features, out_features, dtype=dtype)
 
     def forward(self, x: torch.Tensor, lengths: Sequence[int] | None = None) -> torch.Tensor:
+        batch_size, seq_len, _ = x.shape
+        t_idx = torch.arange(seq_len, device=x.device, dtype=torch.float32)  # [S]
         if lengths is not None:
-            batch_size = x.shape[0]
-            last_hidden = torch.stack([x[i, lengths[i] - 1] for i in range(batch_size)])
+            lengths_t = x.new_tensor(lengths, dtype=torch.float32).unsqueeze(1)  # [B, 1]
         else:
-            last_hidden = x[:, -1]
-        return self.linear(last_hidden)
+            lengths_t = torch.full((batch_size, 1), seq_len, dtype=torch.float32, device=x.device)
+        # log_w[b, t] = -decay * (L_b - 1 - t); max per row = 0 (at t = L_b - 1)
+        log_w = -self.decay * (lengths_t - 1 - t_idx)           # [B, S]
+        log_w = log_w.masked_fill(t_idx >= lengths_t, float("-inf"))  # zero out padding
+        w = torch.exp(log_w)                                     # [B, S]
+        w = w / w.sum(dim=1, keepdim=True)                       # [B, S], normalised
+        pooled = (w.unsqueeze(-1) * x.float()).sum(dim=1)        # [B, H]
+        return self.linear(pooled.to(x.dtype))
+
+
+class RecencyWeightedMLPProbe(torch.nn.Module):
+    """Two-layer MLP probe using exponentially decaying recency-weighted pooling."""
+    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, decay: float = 0.02, mlp_hidden_dim: int = 32) -> None:
+        super().__init__()
+        self.decay = decay
+        self.up = torch.nn.Linear(in_features, mlp_hidden_dim, dtype=dtype)
+        self.relu = torch.nn.ReLU()
+        self.down = torch.nn.Linear(mlp_hidden_dim, out_features, dtype=dtype)
+
+    def forward(self, x: torch.Tensor, lengths: Sequence[int] | None = None) -> torch.Tensor:
+        batch_size, seq_len, _ = x.shape
+        t_idx = torch.arange(seq_len, device=x.device, dtype=torch.float32)  # [S]
+        if lengths is not None:
+            lengths_t = x.new_tensor(lengths, dtype=torch.float32).unsqueeze(1)  # [B, 1]
+        else:
+            lengths_t = torch.full((batch_size, 1), seq_len, dtype=torch.float32, device=x.device)
+        log_w = -self.decay * (lengths_t - 1 - t_idx)           # [B, S]
+        log_w = log_w.masked_fill(t_idx >= lengths_t, float("-inf"))
+        w = torch.exp(log_w)                                     # [B, S]
+        w = w / w.sum(dim=1, keepdim=True)                       # [B, S], normalised
+        pooled = (w.unsqueeze(-1) * x.float()).sum(dim=1)        # [B, H]
+        return self.down(self.relu(self.up(pooled.to(x.dtype))))
+
+
+class AttentionMLPProbe(torch.nn.Module):
+    """Attention probe where attention is the pooling mechanism and MLP is the read-out.
+
+    Differs from AttentionProbe(mlp=True): here the MLP is applied to the
+    attention-pooled hidden state (post-aggregation), not to each token's
+    value projection before aggregation.
+    """
+    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, mlp_hidden_dim: int = 32) -> None:
+        super().__init__()
+        self.q = torch.nn.Linear(in_features, 1, dtype=dtype)
+        self.up = torch.nn.Linear(in_features, mlp_hidden_dim, dtype=dtype)
+        self.relu = torch.nn.ReLU()
+        self.down = torch.nn.Linear(mlp_hidden_dim, out_features, dtype=dtype)
+
+    def forward(self, x: torch.Tensor, lengths: Sequence[int] | None = None) -> torch.Tensor:
+        attn_logits = self.q(x).squeeze(-1)
+        if lengths is not None:
+            mask = torch.zeros_like(attn_logits)
+            for i, length in enumerate(lengths):
+                if length > 0:
+                    mask[i, :length] = 1
+            attn_logits = attn_logits.masked_fill(mask == 0, float("-inf"))
+        attn_weights = torch.nn.functional.softmax(attn_logits, dim=-1)
+        pooled = torch.sum(attn_weights.unsqueeze(-1) * x, dim=1)
+        return self.down(self.relu(self.up(pooled)))
 
 
 class ProbeDataset(Dataset):
@@ -409,10 +474,15 @@ def train_one_layer(layer_idx: int, cfg: ExperimentConfig, split: Dict[str, List
     output_dim = 1 if cfg.probe.label_type == "model_correct" else 4
     logger.info(f"Model architecture: hidden_dim={hidden_dim}, output_dim={output_dim}, probe_type={cfg.probe.probe_type}")
 
-    if cfg.probe.probe_type == "linear":
-        model = LinearProbe(hidden_dim, output_dim, torch.bfloat16)
-    else:
-        model = AttentionProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.probe_type == "mlp", cfg.probe.mlp_hidden_dim)
+    probe_type = cfg.probe.probe_type
+    if probe_type == "recency_linear":
+        model = RecencyWeightedLinearProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.recency_decay)
+    elif probe_type == "recency_mlp":
+        model = RecencyWeightedMLPProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.recency_decay, cfg.probe.mlp_hidden_dim)
+    elif probe_type == "attention_mlp":
+        model = AttentionMLPProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.mlp_hidden_dim)
+    else:  # "attention" (default)
+        model = AttentionProbe(hidden_dim, output_dim, torch.bfloat16, probe_type == "mlp", cfg.probe.mlp_hidden_dim)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
     model.to(device)
@@ -581,9 +651,37 @@ def write_eval_outputs(layer_idx: int, model: torch.nn.Module, loader: DataLoade
             
             activation_device = activation.to(device=device, dtype=weight_dtype)
 
-            if isinstance(model, LinearProbe):
-                pooled = model.linear(activation_device).to(torch.float32)
+            if isinstance(model, (RecencyWeightedLinearProbe, RecencyWeightedMLPProbe)):
+                # Recursive recency-weighted cumsum: weighted_sum[t] = alpha*weighted_sum[t-1] + h[t]
+                alpha = math.exp(-model.decay)
+                act_fp32 = activation_device.to(torch.float32)
+                weighted_sum = torch.zeros(act_fp32.shape[1], dtype=torch.float32, device=device)
+                weight_sum = 0.0
+                pooled_list = []
+                for t in range(full_seq_len):
+                    weighted_sum = alpha * weighted_sum + act_fp32[t]
+                    weight_sum = alpha * weight_sum + 1.0
+                    pooled_t = (weighted_sum / (weight_sum + 1e-8)).unsqueeze(0).to(weight_dtype)
+                    if isinstance(model, RecencyWeightedMLPProbe):
+                        out_t = model.down(model.relu(model.up(pooled_t))).to(torch.float32)
+                    else:
+                        out_t = model.linear(pooled_t).to(torch.float32)
+                    pooled_list.append(out_t)
+                pooled = torch.cat(pooled_list, dim=0)
+            elif isinstance(model, AttentionMLPProbe):
+                # Attention cumsum for pooling, then MLP read-out on pooled hidden state
+                q_logits = model.q(activation_device).squeeze(-1)
+                q_fp32 = q_logits.to(torch.float32)
+                act_fp32 = activation_device.to(torch.float32)
+                max_global = torch.max(q_fp32)
+                exp_logits = torch.exp(q_fp32 - max_global)
+                denom = torch.cumsum(exp_logits, dim=0)
+                weighted = torch.cumsum(exp_logits.unsqueeze(-1) * act_fp32, dim=0)
+                eps = 1e-8
+                pooled_raw = (weighted / (denom.unsqueeze(-1) + eps)).to(weight_dtype)
+                pooled = model.down(model.relu(model.up(pooled_raw))).to(torch.float32)
             else:
+                # AttentionProbe (with optional per-token MLP value projection)
                 q_logits = model.q(activation_device).squeeze(-1)
                 if model.mlp:
                     value_hidden = model.v_up(activation_device)
@@ -804,6 +902,34 @@ def write_eval_outputs(layer_idx: int, model: torch.nn.Module, loader: DataLoade
         logger.info(f"Test accuracy (macro): {test_acc_macro:.2f}% (averaged over {len(per_question_accuracies)} questions)")
 
     logger.info(f"Evaluation outputs written: processed {questions_processed} questions")
+
+
+def evaluate_accuracy(
+    model: torch.nn.Module,
+    data_loader: DataLoader,
+    device: torch.device,
+    label_type: str = "model_ans",
+) -> float:
+    """Return classification accuracy on data_loader without writing any CSVs."""
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for batch_inputs, batch_labels, lengths, _ in data_loader:
+            batch_inputs = batch_inputs.to(device)
+            batch_labels = batch_labels.to(device)
+            logits = model(batch_inputs, lengths)
+            if label_type == "model_correct":
+                logits_flat = logits.view(-1)
+                targets = batch_labels.view(-1).float()
+                preds = (torch.sigmoid(logits_flat) > 0.5).to(targets.dtype)
+                correct += (preds == targets).sum().item()
+                total += targets.numel()
+            else:
+                preds = torch.argmax(logits, dim=1)
+                correct += (preds == batch_labels).sum().item()
+                total += batch_labels.size(0)
+    return correct / total if total > 0 else 0.0
 
 
 def run_probing(cfg: ExperimentConfig, layer_override: int | None = None) -> None:
