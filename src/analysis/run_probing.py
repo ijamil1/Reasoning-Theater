@@ -194,10 +194,17 @@ def load_metadata(metadata_path: Path) -> Dict[str, int]:
 
 
 def compute_normalization_stats(layer_idx: int, train_hashes: Sequence[str], cfg: ExperimentConfig) -> Dict[str, float]:
-    """Compute mean and std for a layer across all training samples."""
+    """Compute mean and std for a layer across all training samples.
+
+    Streams one activation file at a time to avoid accumulating all tensors in
+    RAM.  Uses the sum / sum-of-squares identity so only three scalars need to
+    be kept between files.
+    """
     logger.info(f"Computing normalization stats for layer {layer_idx} on {len(train_hashes)} training samples")
-    all_activations = []
-    
+    count = 0
+    running_sum = 0.0
+    running_sum_sq = 0.0
+
     for idx, qhash in enumerate(train_hashes):
         if (idx + 1) % 500 == 0:
             logger.info(f"  Processing {idx+1}/{len(train_hashes)} samples for stats")
@@ -208,26 +215,40 @@ def compute_normalization_stats(layer_idx: int, train_hashes: Sequence[str], cfg
         if not activation_files:
             continue
         activation_path = activation_dir / activation_files[0]
-        activation = torch.load(activation_path, map_location="cpu")
-        all_activations.append(activation)
-    
-    if not all_activations:
+        activation = torch.load(activation_path, map_location="cpu").float()
+        count += activation.numel()
+        running_sum += activation.sum().item()
+        running_sum_sq += (activation ** 2).sum().item()
+
+    if count == 0:
         raise RuntimeError(f"No activations found for layer {layer_idx} in training set")
-    
-    stacked = torch.cat(all_activations, dim=0)
-    mean = stacked.mean().item()
-    std = stacked.std().item()
-    
+
+    mean = running_sum / count
+    std = (running_sum_sq / count - mean ** 2) ** 0.5
+
     if std == 0.0:
         raise RuntimeError(f"Zero std for layer {layer_idx} activations - cannot normalize")
-    
+
     logger.info(f"Layer {layer_idx} stats: mean={mean:.6f}, std={std:.6f}")
     return {"mean": mean, "std": std}
 
 
 def load_normalization_stats(cfg: ExperimentConfig) -> Dict[int, Dict[str, float]]:
-    """Load normalization stats from file, or from reuse_run_root if specified."""
+    """Load normalization stats from file, or from norm_stats_run_root/reuse_run_root if specified."""
     stats_path = cfg.resolved_paths()["normalization_stats"]
+
+    if cfg.probe.norm_stats_run_root and cfg.probe.normalize_acts and not cfg.probe.recompute_norm_stats:
+        shared_stats_path = Path(cfg.probe.norm_stats_run_root).resolve() / "normalization_stats.json"
+        if shared_stats_path.exists():
+            logger.info(f"Loading normalization stats from norm_stats_run_root: {shared_stats_path}")
+            with shared_stats_path.open("r", encoding="utf-8") as handle:
+                stats = json.load(handle)
+            return {int(k): v for k, v in stats.items()}
+        else:
+            raise FileNotFoundError(
+                f"normalize_acts=True and norm_stats_run_root={cfg.probe.norm_stats_run_root}, "
+                f"but normalization_stats.json not found at {shared_stats_path}"
+            )
 
     if cfg.probe.reuse_run_root and cfg.probe.normalize_acts and not cfg.probe.recompute_norm_stats:
         reuse_root = Path(cfg.probe.reuse_run_root).resolve()

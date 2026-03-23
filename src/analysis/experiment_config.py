@@ -38,6 +38,7 @@ class ProbeConfig:
     eval: bool = True
     checkpoint: Optional[Path] = None
     reuse_run_root: Optional[Path] = None  # path to an existing run with trained probes
+    norm_stats_run_root: Optional[Path] = None  # path to a run whose normalization_stats.json should be reused
     selected_layer: int = -1  # -1 for all layers, otherwise train just this layer (0 to num_layers-1)
     probe_type: str = "attention"
     label_type: str = "model_ans"

@@ -45,11 +45,13 @@ from src.analysis.run_probing import (  # noqa: E402
     AttentionProbe,
     RecencyWeightedLinearProbe,
     RecencyWeightedMLPProbe,
+    compute_normalization_stats,
     evaluate_accuracy_averaged_over_positions,
     load_checkpoint,
     load_metadata,
     load_samples,
     load_split,
+    save_normalization_stats,
     train_one_layer,
 )
 from src.analysis.setup_data import setup_data  # noqa: E402
@@ -83,6 +85,7 @@ def build_experiment_config(
     run_name: str,
     probe_type: str,
     batch_size: int,
+    norm_stats_run_root: Optional[Path] = None,
 ) -> ExperimentConfig:
     """Build an ExperimentConfig for a single (probe_type, batch_size) run."""
     data_raw = phase3_cfg["data"]
@@ -124,6 +127,7 @@ def build_experiment_config(
         recency_decay=float(probe_base.get("recency_decay", 0.02)),
         normalize_acts=bool(probe_base.get("normalize_acts", True)),
         disable_tqdm=bool(probe_base.get("disable_tqdm", True)),
+        norm_stats_run_root=norm_stats_run_root,
     )
 
     forced = ForcedAnswerConfig(enabled=False)
@@ -365,6 +369,20 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------------
+    # Step 1b: Compute normalization stats once into the setup run's dir.
+    # All 12 grid runs will load from there via norm_stats_run_root.
+    # ------------------------------------------------------------------
+    shared_norm_stats_root = setup_cfg.resolved_paths()["root"]
+    shared_norm_stats_path = shared_norm_stats_root / "normalization_stats.json"
+    if shared_norm_stats_path.exists():
+        logger.info(f"Normalization stats already exist at {shared_norm_stats_path}, skipping computation")
+    else:
+        logger.info(f"Computing normalization stats once into setup run dir: {shared_norm_stats_root}")
+        norm_stats = compute_normalization_stats(layer_idx, split["train"], setup_cfg)
+        save_normalization_stats(setup_cfg, {layer_idx: norm_stats})
+        logger.info("Normalization stats saved.")
+
+    # ------------------------------------------------------------------
     # Step 2: Train + eval grid
     # ------------------------------------------------------------------
     grid_results: Dict[Tuple[str, int], float] = {}
@@ -381,6 +399,7 @@ def main() -> None:
                 run_name,
                 probe_type,
                 batch_size,
+                norm_stats_run_root=shared_norm_stats_root,
             )
 
             # Train for 50 epochs; best checkpoint saved by val loss.
