@@ -187,6 +187,7 @@ def load_split(split_path: Path) -> Dict[str, List[str]]:
 
 
 def load_metadata(metadata_path: Path) -> Dict[str, int]:
+    csv.field_size_limit(sys.maxsize)
     with metadata_path.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         return {row["question_hash"]: int(row["question_idx"]) for row in reader}
