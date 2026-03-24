@@ -327,15 +327,8 @@ def load_samples(layer_idx: int, hashes: Sequence[str], cfg: ExperimentConfig, l
             norm_stats = compute_normalization_stats(layer_idx, hashes, cfg)
             all_stats[layer_idx] = norm_stats
             save_normalization_stats(cfg, all_stats)
-            all_stats = load_normalization_stats(cfg)
-            norm_stats = all_stats[layer_idx]
         else:
-            all_stats = load_normalization_stats(cfg)
-            if layer_idx in all_stats:
-                norm_stats = all_stats[layer_idx]
-                logger.info(f"Using normalization stats for layer {layer_idx}: mean={norm_stats['mean']:.6f}, std={norm_stats['std']:.6f}")
-            else:
-                raise RuntimeError(
+            raise RuntimeError(
                     f"normalize_acts=True but no stats found for layer {layer_idx} and not loading training set. "
                     f"Stats must be pre-computed or reuse_run_root must be set."
                 )
@@ -478,19 +471,23 @@ def train_one_layer(layer_idx: int, cfg: ExperimentConfig, split: Dict[str, List
     
     samples_train = []
     samples_val = []
+    samples_test = []
+    source_samples = None
     if cfg.probe.train:
         samples_train = load_samples(layer_idx, split["train"], cfg, cfg.probe.label_type, is_training_set=True)
         samples_val = load_samples(layer_idx, split["val"], cfg, cfg.probe.label_type, is_training_set=False)
+        source_samples = samples_train
+
+    if cfg.probe.eval:
+        samples_test = load_samples(layer_idx, split["test"], cfg, cfg.probe.label_type, is_training_set=False)
+        source_samples = samples_test
     
-    samples_test = load_samples(layer_idx, split["test"], cfg, cfg.probe.label_type, is_training_set=False)
-    
-    if cfg.probe.train and (not samples_train or not samples_test):
-        raise RuntimeError(f"No samples for layer {layer_idx}: train={len(samples_train)}, test={len(samples_test)}")
+    if cfg.probe.train and (not samples_train):
+        raise RuntimeError(f"No samples for layer {layer_idx}: train={len(samples_train)}")
     if cfg.probe.eval and not samples_test:
         raise RuntimeError(f"No eval samples for layer {layer_idx}: test={len(samples_test)}")
 
-    source_samples = samples_train or samples_test
-    if not source_samples:
+    if source_samples is None:
         raise RuntimeError(f"No samples available for layer {layer_idx}")
     hidden_dim = source_samples[0]["activation"].shape[1]
     output_dim = 1 if cfg.probe.label_type == "model_correct" else 4
@@ -1011,13 +1008,13 @@ def evaluate_accuracy_averaged_over_positions(
     samples: List[Dict],
     device: torch.device,
     label_type: str = "model_ans",
-) -> float:
-    """Return accuracy averaged over four relative reasoning positions.
+) -> List[float]:
+    """Return per-position accuracies (averaged over samples) for four relative positions.
 
     For each sample the probe is evaluated at the token positions closest to
     25 %, 50 %, 75 %, and 90 % of the full reasoning trace using the cumsum /
-    recursive trick.  Accuracy is computed at each percentile (averaged across
-    questions) and then averaged uniformly across the four percentiles.
+    recursive trick.  Returns one accuracy per percentile, each averaged across
+    all questions.  The caller is responsible for averaging across positions.
     """
     model.eval()
     weight_dtype = next(model.parameters()).dtype
@@ -1041,9 +1038,7 @@ def evaluate_accuracy_averaged_over_positions(
                 correct[i] += int(preds[idx].item() == label)
                 total[i] += 1
 
-    accs = [correct[i] / total[i] if total[i] > 0 else float("nan") for i in range(n)]
-    valid = [a for a in accs if not math.isnan(a)]
-    return float(sum(valid) / len(valid)) if valid else 0.0
+    return [correct[i] / total[i] if total[i] > 0 else float("nan") for i in range(n)]
 
 
 def run_probing(cfg: ExperimentConfig, layer_override: int | None = None) -> None:

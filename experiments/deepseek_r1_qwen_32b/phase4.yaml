@@ -18,13 +18,13 @@ probe_base:
   probe_type: attention        # swap this to re-run with a different architecture
   label_type: model_ans
   batch_size: 64
-  num_epochs: 50
+  num_epochs: 10
   learning_rate: 0.005         # paper value for distilled DeepSeek-R1 models
   weight_decay: 0.001          # paper value
   normalize_acts: true
   mlp_hidden_dim: 32
   recency_decay: 0.02
-  disable_tqdm: true
+  disable_tqdm: false
 
 results:
   results_dir: results

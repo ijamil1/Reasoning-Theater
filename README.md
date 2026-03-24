@@ -124,13 +124,19 @@ Sizes are for bfloat16 tensors over reasoning-trace tokens only (`hidden_dim × 
 Ensure the  machine's network volume (persistent) disk has ~ **700 GB free** before starting data generation (needs to account for repo size + stage 1 outputs + stage 2 ouputs + 64 GB + 240 GB of model wts). 
 
 **After data generation:** 
-Run the analysis pipeline:
+Can run phase 4 (probe generalizability):
+  
+  BEFORE DOING SO, WE NEED TO MOVE MMLU NORMALIZATION STATS INTO directory: {run_name_prefix}_train_{dataset['name']} which resolves to 
+  “results/phase4_qwen_32b_train_mmlu/”
+
+```bash
+bash scripts/run_phase4.sh experiments/deepseek_r1_qwen_32b/phase4.yaml
+```
+
+Can run the analysis pipeline:
 
 ```bash
 bash scripts/run_pipeline.sh experiments/example_analysis.yaml
-
-bash scripts/run_phase3.sh experiments/deepseek_r1_qwen_32b/phase3.yaml
-
 ```
 
 ### Reference
@@ -165,3 +171,8 @@ inflections:
 ```
 
 Results are written to `results/<run_name>/`, with logs in `results/<run_name>/logs/`.
+
+### SCP from pod to local machine (General Form)
+```bash
+scp -P 30194 -i /Users/irfanjamil/.ssh/id_ed25519 root@213.192.2.119:/workspace/Reasoning-Theater/data/results/some_path_or_file /Users/irfanjamil/Reasoning-Theater/some_path_or_file
+```

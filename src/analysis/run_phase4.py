@@ -136,6 +136,7 @@ def build_train_cfg(
         ),
         dataset_name=dataset["name"],
     )
+
     probe = ProbeConfig(
         num_layers=int(pb["num_layers"]),
         enabled=True,
@@ -147,12 +148,13 @@ def build_train_cfg(
         batch_size=int(pb.get("batch_size", 64)),
         learning_rate=float(pb.get("learning_rate", 0.005)),
         weight_decay=float(pb.get("weight_decay", 0.001)),
-        num_epochs=int(pb.get("num_epochs", 50)),
+        num_epochs=int(pb.get("num_epochs", 10)),
         mlp_hidden_dim=int(pb.get("mlp_hidden_dim", 32)),
         recency_decay=float(pb.get("recency_decay", 0.02)),
         normalize_acts=bool(pb.get("normalize_acts", True)),
-        disable_tqdm=bool(pb.get("disable_tqdm", True)),
+        disable_tqdm=bool(pb.get("disable_tqdm", False)),
     )
+
     return ExperimentConfig(
         run=run,
         data=data,
@@ -312,6 +314,7 @@ def plot_matrix(
     filename_stem: str,
     cmap: str = "Blues",
     center: Optional[float] = None,
+    colorbar_label: str = "Accuracy (%)",
 ) -> None:
     import matplotlib
     matplotlib.use("Agg")
@@ -339,7 +342,7 @@ def plot_matrix(
     fig, ax = plt.subplots(figsize=(7, 6))
     masked = np.ma.masked_invalid(data)
     im = ax.imshow(masked, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
-    plt.colorbar(im, ax=ax, label="Accuracy (%)")
+    plt.colorbar(im, ax=ax, label=colorbar_label)
 
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
@@ -361,10 +364,9 @@ def plot_matrix(
                 )
 
     plt.tight_layout()
-    for ext in ("pdf", "png"):
-        p = plots_dir / f"{filename_stem}.{ext}"
-        fig.savefig(p, dpi=150)
-        logger.info(f"Saved {p}")
+    p = plots_dir / f"{filename_stem}.png"
+    fig.savefig(p, dpi=150)
+    logger.info(f"Saved {p}")
     plt.close(fig)
 
 
@@ -427,11 +429,25 @@ def main() -> None:
             f"  {name}: train={len(splits[name]['train'])}, "
             f"val={len(splits[name]['val'])}, test={len(splits[name]['test'])}"
         )
+    
+    # Infer hidden_dim from a single activation file — same for all datasets
+    # since they share the same model.
+    hidden_dim = _peek_hidden_dim(Path(datasets[0]["activations_dir"]), layer_idx)
+    if hidden_dim is None:
+        logger.error(
+            f"Could not infer hidden_dim for {datasets[0]["name"]} at layer {layer_idx}. "
+            f"Skipping entire row."
+        )
+        return
+
+    logger.info(f"  hidden_dim={hidden_dim}")
 
     # ------------------------------------------------------------------
     # Step 1 & 2: Nested loop — train on A, evaluate on all B (including A).
+    # acc_matrix_raw stores [acc@p25, acc@p50, acc@p75, acc@p90] per cell.
     # ------------------------------------------------------------------
-    acc_matrix: Dict[str, Dict[str, float]] = {n: {} for n in dataset_names}
+    _FRACS = ["p25", "p50", "p75", "p90"]
+    acc_matrix_raw: Dict[str, Dict[str, List[float]]] = {n: {} for n in dataset_names}
 
     for train_ds in datasets:
         train_name = train_ds["name"]
@@ -443,20 +459,6 @@ def main() -> None:
         )
         train_one_layer(layer_idx, train_cfg, splits[train_name], meta_maps[train_name])
 
-        # Infer hidden_dim from a single activation file — same for all datasets
-        # since they share the same model.
-        hidden_dim = _peek_hidden_dim(Path(train_ds["activations_dir"]), layer_idx)
-        if hidden_dim is None:
-            logger.error(
-                f"Could not infer hidden_dim for {train_name} at layer {layer_idx}. "
-                f"Skipping entire row."
-            )
-            for eval_name in dataset_names:
-                acc_matrix[train_name][eval_name] = float("nan")
-            continue
-
-        logger.info(f"  hidden_dim={hidden_dim}")
-
         # Instantiate probe and load the best checkpoint saved by train_one_layer.
         model = instantiate_probe(probe_type, hidden_dim, output_dim, train_cfg)
         load_checkpoint(model, train_cfg, layer_idx)
@@ -465,7 +467,7 @@ def main() -> None:
 
         for eval_ds in datasets:
             eval_name = eval_ds["name"]
-            logger.info(f"\n  Inner loop — eval dataset: {eval_name}")
+            logger.info(f"\n  Inner loop - train dataset: {train_name} — eval'ing on dataset: {eval_name}")
 
             eval_cfg = build_eval_cfg(train_cfg, eval_ds)
             samples = load_samples(
@@ -480,70 +482,98 @@ def main() -> None:
                 logger.warning(
                     f"  No test samples for eval_ds={eval_name} — recording NaN"
                 )
-                acc_matrix[train_name][eval_name] = float("nan")
+                acc_matrix_raw[train_name][eval_name] = [float("nan")] * len(_FRACS)
                 continue
 
-            acc = evaluate_accuracy_averaged_over_positions(
+            per_pos_accs = evaluate_accuracy_averaged_over_positions(
                 model, samples, device, label_type
             )
             logger.info(
-                f"  Accuracy [{train_name} → {eval_name}]: {acc * 100:.2f}%"
+                f"  Accuracy [{train_name} → {eval_name}]: "
+                + ", ".join(f"{f}={a*100:.2f}%" for f, a in zip(_FRACS, per_pos_accs))
             )
-            acc_matrix[train_name][eval_name] = acc
+            acc_matrix_raw[train_name][eval_name] = per_pos_accs
 
         del model
         torch.cuda.empty_cache()
 
     # ------------------------------------------------------------------
-    # Step 3: Compute degradation matrix.
-    # degradation[A][B] = accuracy[A][B] - accuracy[A][A]
-    # Diagonal = 0; off-diagonals typically < 0 (transfer loss).
+    # Step 3: Fan out into 5 accuracy matrices (one per position + avg)
+    # and 5 degradation matrices.
     # ------------------------------------------------------------------
-    deg_matrix: Dict[str, Dict[str, float]] = {}
-    for train_name in dataset_names:
-        deg_matrix[train_name] = {}
-        diag = acc_matrix[train_name].get(train_name, float("nan"))
-        for eval_name in dataset_names:
-            val = acc_matrix[train_name].get(eval_name, float("nan"))
-            if np.isnan(val) or np.isnan(diag):
-                deg_matrix[train_name][eval_name] = float("nan")
-            else:
-                deg_matrix[train_name][eval_name] = val - diag
+    def _extract_pos_matrix(pos_idx: Optional[int]) -> Dict[str, Dict[str, float]]:
+        """Extract a scalar matrix for position pos_idx, or average if None."""
+        mat: Dict[str, Dict[str, float]] = {}
+        for tn in dataset_names:
+            mat[tn] = {}
+            for en in dataset_names:
+                vals = acc_matrix_raw[tn].get(en, [float("nan")] * len(_FRACS))
+                if pos_idx is None:
+                    valid = [v for v in vals if not np.isnan(v)]
+                    mat[tn][en] = float(sum(valid) / len(valid)) if valid else float("nan")
+                else:
+                    mat[tn][en] = vals[pos_idx] if pos_idx < len(vals) else float("nan")
+        return mat
+
+    def _deg_matrix(acc_mat: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
+        deg: Dict[str, Dict[str, float]] = {}
+        for tn in dataset_names:
+            deg[tn] = {}
+            diag = acc_mat[tn].get(tn, float("nan"))
+            for en in dataset_names:
+                val = acc_mat[tn].get(en, float("nan"))
+                if np.isnan(val) or np.isnan(diag):
+                    deg[tn][en] = float("nan")
+                else:
+                    deg[tn][en] = val - diag
+        return deg
+
+    # Build the 5 pairs: (label, acc_matrix, deg_matrix)
+    position_specs = [(f, i) for i, f in enumerate(_FRACS)] + [("avg", None)]
+    matrix_sets = []
+    for label, pos_idx in position_specs:
+        acc_mat = _extract_pos_matrix(pos_idx)
+        deg_mat = _deg_matrix(acc_mat)
+        matrix_sets.append((label, acc_mat, deg_mat))
 
     # ------------------------------------------------------------------
-    # Step 4: Print, save, and plot.
+    # Step 4: Print, save, and plot all 10 matrices.
     # ------------------------------------------------------------------
-    print_matrix(
-        acc_matrix,
-        dataset_names,
-        "Phase 4 — Raw Accuracy Matrix (%)",
-    )
-    print_matrix(
-        deg_matrix,
-        dataset_names,
-        "Phase 4 — Degradation Matrix (accuracy[A][B] - accuracy[A][A])",
-    )
+    for label, acc_mat, deg_mat in matrix_sets:
+        print_matrix(
+            acc_mat,
+            dataset_names,
+            f"Phase 4 — Raw Accuracy Matrix (%) [{label}]",
+        )
+        print_matrix(
+            deg_mat,
+            dataset_names,
+            f"Phase 4 — Degradation Matrix [{label}] (accuracy[A][B] - accuracy[A][A])",
+        )
 
-    save_matrix_csv(acc_matrix, dataset_names, summary_csv_path)
-    save_matrix_csv(deg_matrix, dataset_names, degradation_csv_path)
+        acc_csv = summary_csv_path.with_name(f"{summary_csv_path.stem}_{label}.csv")
+        deg_csv = degradation_csv_path.with_name(f"{degradation_csv_path.stem}_{label}.csv")
+        save_matrix_csv(acc_mat, dataset_names, acc_csv)
+        save_matrix_csv(deg_mat, dataset_names, deg_csv)
 
-    plot_matrix(
-        acc_matrix,
-        dataset_names,
-        "Phase 4: Transfer Accuracy Matrix (%)",
-        plots_dir,
-        "accuracy_matrix",
-        cmap="Blues",
-    )
-    plot_matrix(
-        deg_matrix,
-        dataset_names,
-        "Phase 4: Degradation Matrix\n(accuracy[A][B] − accuracy[A][A])",
-        plots_dir,
-        "degradation_matrix",
-        cmap="RdBu",
-        center=0.0,
-    )
+        plot_matrix(
+            acc_mat,
+            dataset_names,
+            f"Phase 4: Transfer Accuracy Matrix (%) [{label}]",
+            plots_dir,
+            f"accuracy_matrix_{label}",
+            cmap="Blues",
+        )
+        plot_matrix(
+            deg_mat,
+            dataset_names,
+            f"Phase 4: Degradation Matrix [{label}]\n(accuracy[A][B] − accuracy[A][A])",
+            plots_dir,
+            f"degradation_matrix_{label}",
+            cmap="RdBu",
+            center=0.0,
+            colorbar_label="Accuracy Δ (pp)",
+        )
 
     logger.info("Phase 4 complete.")
 

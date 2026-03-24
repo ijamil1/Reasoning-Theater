@@ -74,23 +74,6 @@ Train the attention probe on the MMLU train split for DeepSeek-R1 only. Evaluate
 
 ---
 
-## Phase 3: Probe Architecture Comparison (Idea 3)
-
-Still on DeepSeek-R1 + MMLU only. Extend the probe training stage to support all five architectures, using the same training loop, cross-entropy loss against the model's final answer (not ground truth), random prefix truncation, and best-checkpoint-by-val-loss pattern throughout.
-
-The four architectures:
-
-- **Attention probe** (paper's method, baseline): learned attention-weighted pooling of hidden states. Expected to perform best.
-- **Recency-weighted linear probe**: weighted average of `h[0:T, :]` where weights decay exponentially with distance from the current token (i.e. more recent tokens get higher weight), followed by a linear layer + softmax. A structured alternative to uniform mean pooling that encodes the intuition that recent reasoning steps are more predictive of the final answer.
-- **Recency-weighted MLP probe**: same exponential recency weighting as above, but the resulting pooled vector is passed into a two-layer MLP with ReLU non-linearity rather than a linear layer. Tests whether a non-linear read-out on top of recency-weighted pooling recovers additional signal.
-- **Attention + MLP probe**: attention-weighted pooling (as in the attention probe) used as the aggregation mechanism, but the pooled vector is then passed through a two-layer MLP with ReLU non-linearity before the final classification layer. Tests whether the bottleneck in the attention probe is the linear read-out.
-
-Evaluate all variants using the cumsum trick for simultaneous predictions at every prefix length. Plot accuracy vs. relative reasoning position for each architecture.
-
-**Selection criteria for Phase 4+:** Carry forward the attention probe as the primary architecture. The recency-weighted linear probe serves as a structured baseline against the attention probe's learned weighting.
-
----
-
 ## Phase 4: Generalizability Matrix (Idea 2)
 
 Scale probe training to all (model, dataset) training pairs using the architecture(s) selected in Phase 3. For each trained probe, evaluate on all four datasets' test splits.
@@ -127,23 +110,6 @@ With probe predictions and forced answer predictions in the step-level CSVs, com
 
 ---
 
-## Phase 7: Temporal Belief Tracking (Idea 4)
-
-Post-hoc analysis on existing step-level CSVs. No additional inference needed.
-
-For each example, track the probe's argmax prediction at every 5% prefix interval and identify two commitment points:
-
-- **Internal commitment point:** First timestep at which the probe's argmax prediction stabilizes to the model's final answer.
-- **Expressed commitment point:** First timestep at which the CoT monitor predicts the correct final answer.
-
-The gap between these two is the **per-example performativity event**. This reframes performativity from an aggregate statistic into a per-example event, which is more interpretable.
-
-**Analyses:** 
-- Does gap size correlate with dataset difficulty?
-- Does gap size correlate with whether the model's final answer is correct?
-- Does gap size correlate with trace length?
-
----
 
 ## Phase 8: Calibration and Early Exit (Idea 5)
 
@@ -176,12 +142,11 @@ Report sensitivity of the main results (probe accuracy curve shape and performat
 | 0 | Dataset construction | None |
 | 1 | Rollout collection + activation harvesting | Phase 0, infrastructure decision |
 | 2 | Replication baseline | Phase 1 |
-| 3 | Probe architecture comparison | Phase 2 |
-| 4 | Generalizability matrix | Phase 3 |
-| 6 | Difficulty vs. performativity | Phases 3, 4 |
+| 4 | Generalizability matrix | Phase 2 |
+| 6 | Difficulty vs. performativity | Phase 4 |
 | 7 | Temporal belief tracking | Phase 6 |
 | 8 | Calibration and early exit | Phase 6 |
-| 9 | Training process ablations | Phase 3 |
+| 9 | Training process ablations | Phase 2 |
 
 **Parallelism:**
 - Phase 9 can run in parallel with Phase 4.
