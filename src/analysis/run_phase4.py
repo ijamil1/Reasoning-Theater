@@ -435,7 +435,7 @@ def main() -> None:
     hidden_dim = _peek_hidden_dim(Path(datasets[0]["activations_dir"]), layer_idx)
     if hidden_dim is None:
         logger.error(
-            f"Could not infer hidden_dim for {datasets[0]["name"]} at layer {layer_idx}. "
+            f"Could not infer hidden_dim for {datasets[0]['name']} at layer {layer_idx}. "
             f"Skipping entire row."
         )
         return
