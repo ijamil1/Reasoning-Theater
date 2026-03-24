@@ -3,14 +3,14 @@ datasets:
     responses_dir: data/gpt_oss_120b/mmlu/stage1_responses
     activations_dir: data/gpt_oss_120b/mmlu/stage2_activations
   - name: arc_challenge
-    responses_dir: data/gpt_oss_120b/arc_challenge/stage1_responses
-    activations_dir: data/gpt_oss_120b/arc_challenge/stage2_activations
+    responses_dir: data/gpt_oss_120b/arc-challenge/stage1_responses
+    activations_dir: data/gpt_oss_120b/arc-challenge/stage2_activations
   - name: medqa
     responses_dir: data/gpt_oss_120b/medqa/stage1_responses
     activations_dir: data/gpt_oss_120b/medqa/stage2_activations
   - name: gpqa_diamond
-    responses_dir: data/gpt_oss_120b/gpqa_diamond/stage1_responses
-    activations_dir: data/gpt_oss_120b/gpqa_diamond/stage2_activations
+    responses_dir: data/gpt_oss_120b/gpqa/stage1_responses
+    activations_dir: data/gpt_oss_120b/gpqa/stage2_activations
 
 probe_base:
   num_layers: 36
