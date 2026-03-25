@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import json
 import logging
 import math
@@ -22,8 +23,10 @@ CHOICES = ["A", "B", "C", "D"]
 
 def generate_forced_completions(cfg: ExperimentConfig) -> Path:
     """Generate forced-answer completions using vLLM and save to JSON."""
+    import torch
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
+    from vllm.distributed.parallel_state import destroy_model_parallel
 
     responses_dir = cfg.data.responses_dir
     output_path = cfg.forced_answer.completions_path or cfg.data.forced_answers_path
@@ -156,6 +159,13 @@ def generate_forced_completions(cfg: ExperimentConfig) -> Path:
         json.dump(all_results, f, indent=2)
 
     logger.info(f"Forced answering generation complete: {len(all_results)} questions")
+
+    destroy_model_parallel()
+    del llm
+    gc.collect()
+    torch.cuda.empty_cache()
+    logger.info("GPU memory released")
+
     return output_path
 
 

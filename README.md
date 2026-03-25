@@ -134,9 +134,18 @@ bash scripts/run_phase4.sh experiments/deepseek_r1_qwen_32b/phase4.yaml
 ```
 
 Can run the analysis pipeline:
+  NOTE 1: export OpenRouter API key in shell session so CoT monitor can work
+
+  NOTE 2: tweak analysis yamls depending on if you want plotting, inflection, forced answering (ensure running on 2 GPUs if this is enabled). Running probe eval + forced answering sequentially MAY fail due to competing GPU memory usage
+
+  NOTE 3: Copy normalization_stats.json from the phase 4 mmlu-trained probe into the analysis root for each dataset’s analysis
 
 ```bash
-bash scripts/run_pipeline.sh experiments/example_analysis.yaml
+bash scripts/run_pipeline.sh experiments/example_analysis.yaml #runs analysis for a single dataset
+```
+
+```bash
+bash scripts/run_analysis_deepseek_r1_qwen_32b.sh #runs analysis for 4 datasets at a time
 ```
 
 ### Reference

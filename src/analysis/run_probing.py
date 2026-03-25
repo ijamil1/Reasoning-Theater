@@ -618,6 +618,10 @@ def train_one_layer(layer_idx: int, cfg: ExperimentConfig, split: Dict[str, List
         write_eval_outputs(layer_idx, model, test_loader, cfg, meta_idx_map)
         logger.info("Evaluation complete")
 
+    model.cpu()
+    torch.cuda.empty_cache()
+    logger.info("GPU memory released")
+
 
 def write_eval_outputs(layer_idx: int, model: torch.nn.Module, loader: DataLoader, cfg: ExperimentConfig, meta_idx_map: Dict[str, int]) -> None:
     logger.info(f"Writing evaluation outputs for layer {layer_idx}")

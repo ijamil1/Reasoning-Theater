@@ -1,5 +1,5 @@
 run:
-  run_name: arc_challenge_deepseek_r1_qwen_32b
+  run_name: analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval
   results_dir: results
   seed: 42
 
@@ -15,8 +15,11 @@ setup:
 
 probe:
   enabled: true
-  train: true
+  train: false
   eval: true
+  checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer63.pth
+  normalize_acts: true
+  recompute_norm_stats: false
   num_layers: 64
   selected_layer: 63
   probe_type: attention

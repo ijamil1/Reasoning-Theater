@@ -1,5 +1,5 @@
 run:
-  run_name: gpqa_deepseek_r1_qwen_32b
+  run_name: analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval
   results_dir: results
   seed: 42
 
@@ -12,12 +12,14 @@ data:
 
 setup:
   enabled: true
-  train_val_test_split_ratio: [0.0, 0.0, 1.0]
 
 probe:
   enabled: true
   train: false
   eval: true
+  checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer63.pth
+  normalize_acts: true
+  recompute_norm_stats: false
   num_layers: 64
   selected_layer: 63
   probe_type: attention
