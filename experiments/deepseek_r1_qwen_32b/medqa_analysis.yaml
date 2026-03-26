@@ -30,7 +30,7 @@ probe:
   num_epochs: 10
 
 forced_answer:
-  enabled: true
+  enabled: false
   generate: true
   tensor_parallel_size: 2
   batch_size: 100
@@ -44,7 +44,7 @@ cot_monitor:
   per_question_concurrency: 8
 
 plots:
-  enabled: true
+  enabled: false
   model_name: DeepSeek-R1-Distill-Qwen-32B
   dataset_name: MedQA
 
