@@ -183,5 +183,5 @@ Results are written to `results/<run_name>/`, with logs in `results/<run_name>/l
 
 ### SCP from pod to local machine (General Form)
 ```bash
-scp -P 30194 -i /Users/irfanjamil/.ssh/id_ed25519 root@213.192.2.119:/workspace/Reasoning-Theater/data/results/some_path_or_file /Users/irfanjamil/Reasoning-Theater/some_path_or_file
+scp -P 41530 -i /Users/irfanjamil/.ssh/id_ed25519 root@69.19.136.235:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/step_level/f836d8ddd3fc.csv /Users/irfanjamil/Reasoning-Theater/
 ```

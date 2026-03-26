@@ -30,13 +30,13 @@ probe:
   num_epochs: 10
 
 forced_answer:
-  enabled: false
+  enabled: true
   generate: true
-  tensor_parallel_size: 2
+  tensor_parallel_size: 1
   batch_size: 100
 
 cot_monitor:
-  enabled: true
+  enabled: false
   model: google/gemini-2.5-flash
   api_key_env: OPENROUTER_API_KEY
   max_tokens: 8
@@ -44,7 +44,7 @@ cot_monitor:
   per_question_concurrency: 8
 
 plots:
-  enabled: false
+  enabled: true
   model_name: DeepSeek-R1-Distill-Qwen-32B
   dataset_name: MMLU-Redux
 
