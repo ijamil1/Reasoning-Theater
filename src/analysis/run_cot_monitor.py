@@ -8,6 +8,9 @@ import json
 import logging
 import os
 import re
+import sys
+
+csv.field_size_limit(sys.maxsize)
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Tuple

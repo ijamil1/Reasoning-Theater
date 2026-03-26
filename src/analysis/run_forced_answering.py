@@ -5,6 +5,9 @@ from __future__ import annotations
 import argparse
 import csv
 import gc
+import sys
+
+csv.field_size_limit(sys.maxsize)
 import json
 import logging
 import math
