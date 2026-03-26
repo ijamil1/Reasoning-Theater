@@ -1,5 +1,5 @@
 run:
-  run_name: analysis_deepseek_r1_qwen_32b_mmuluTrain_mmluEval
+  run_name: analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval
   results_dir: results
   seed: 42
 
