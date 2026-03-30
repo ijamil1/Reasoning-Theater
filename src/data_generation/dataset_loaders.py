@@ -323,7 +323,7 @@ def load_mmlu_pro_questions(
         if item["category"].lower() not in MMLU_PRO_CATEGORIES:
             continue
 
-        question_index = str(item["question_index"])
+        question_index = str(item["question_id"])
         if question_index not in distractors_map:
             skipped += 1
             continue

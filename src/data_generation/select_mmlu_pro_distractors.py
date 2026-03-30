@@ -162,7 +162,7 @@ def main():
     results = dict(existing)
 
     for item in tqdm(rows, desc="Selecting distractors"):
-        question_index = str(item["question_index"])
+        question_index = str(item["question_id"])
         if question_index in results:
             continue
 
