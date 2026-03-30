@@ -134,7 +134,7 @@ def main():
         type=Path,
         default=Path(__file__).parent.parent.parent / "dataset_prep" / "mmlu_pro_distractors.json",
     )
-    parser.add_argument("--model", default="google/gemini-2.5-flash")
+    parser.add_argument("--model", default="google/gemini-2.5-flash-lite")
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
 
