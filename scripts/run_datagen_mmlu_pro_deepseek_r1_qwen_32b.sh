@@ -7,9 +7,6 @@ set -euo pipefail
 ROOT_DIR="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 FINAL_LAYER=63  # num_layers=64, 0-indexed final layer
 
-cd "${ROOT_DIR}"
-export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
-
 DATASETS=(
     "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_datagen.yaml"
 )
