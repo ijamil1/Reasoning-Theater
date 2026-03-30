@@ -293,6 +293,70 @@ def load_medqa_questions(
     return questions
 
 
+MMLU_PRO_CATEGORIES = {"math", "physics", "chemistry", "law", "biology"}
+
+# Resolved relative to this file's package root (src/data_generation/../../dataset_prep/)
+_REPO_ROOT = Path(__file__).parent.parent.parent
+MMLU_PRO_DISTRACTORS_PATH = _REPO_ROOT / "dataset_prep" / "mmlu_pro_distractors.json"
+
+
+def load_mmlu_pro_questions(
+    config: DataGenerationConfig,
+    question_lookup: Optional[Dict[str, str]] = None,
+) -> List[QuestionData]:
+    """Load MMLU-Pro test split, downsampled to 4 choices using pre-selected distractors."""
+    if not MMLU_PRO_DISTRACTORS_PATH.exists():
+        raise FileNotFoundError(
+            f"Distractors file not found: {MMLU_PRO_DISTRACTORS_PATH}. "
+            "Run scripts/select_mmlu_pro_distractors.py first."
+        )
+
+    with MMLU_PRO_DISTRACTORS_PATH.open() as f:
+        distractors_map: Dict[str, List[str]] = json.load(f)
+
+    logger.info("Loading MMLU-Pro test split from TIGER-Lab/MMLU-Pro")
+    dataset = load_dataset("TIGER-Lab/MMLU-Pro", split="test")
+
+    questions = []
+    skipped = 0
+    for item in dataset:
+        if item["category"].lower() not in MMLU_PRO_CATEGORIES:
+            continue
+
+        question_index = str(item["question_index"])
+        if question_index not in distractors_map:
+            skipped += 1
+            continue
+
+        options = list(item["options"])
+        correct_text = options[item["answer_index"]]
+        distractors = distractors_map[question_index]
+
+        correct_idx = random.randint(0, 3)
+        choices = list(distractors)
+        choices.insert(correct_idx, correct_text)
+        correct_answer = CHOICE_LABELS[correct_idx]
+
+        formatted = format_question(item["question"], choices)
+        q_hash = _resolve_hash(formatted, item["question"], question_lookup)
+
+        questions.append(
+            QuestionData(
+                question_hash=q_hash,
+                question=item["question"],
+                choices=choices,
+                correct_answer=correct_answer,
+                formatted_question=formatted,
+                category=item["category"],
+            )
+        )
+
+    if skipped:
+        logger.warning(f"Skipped {skipped} questions not found in distractors file")
+    logger.info(f"Loaded {len(questions)} MMLU-Pro questions")
+    return questions
+
+
 def load_dataset_questions(config: DataGenerationConfig) -> List[QuestionData]:
     """Load questions from the specified dataset."""
     question_lookup = None
@@ -310,10 +374,12 @@ def load_dataset_questions(config: DataGenerationConfig) -> List[QuestionData]:
         questions = load_arc_questions(config, "ARC-Challenge", question_lookup)
     elif name == "medqa":
         questions = load_medqa_questions(config, question_lookup)
+    elif name == "mmlu_pro":
+        questions = load_mmlu_pro_questions(config, question_lookup)
     else:
         raise ValueError(
             f"Unknown dataset: {config.dataset_name!r}. "
-            "Expected one of: 'gpqa', 'mmlu', 'arc-easy', 'arc-challenge', 'medqa'"
+            "Expected one of: 'gpqa', 'mmlu', 'arc-easy', 'arc-challenge', 'medqa', 'mmlu_pro'"
         )
 
     if config.limit is not None:

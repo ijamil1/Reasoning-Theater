@@ -183,5 +183,65 @@ Results are written to `results/<run_name>/`, with logs in `results/<run_name>/l
 
 ### SCP from pod to local machine (General Form)
 ```bash
-scp -P 41530 -i /Users/irfanjamil/.ssh/id_ed25519 root@69.19.136.235:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/step_level/f836d8ddd3fc.csv /Users/irfanjamil/Reasoning-Theater/
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/token_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/token_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/step_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/step_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/token_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/token_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/step_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/step_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/token_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/token_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/step_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/step_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/token_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/token_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/step_level/*" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/step_level/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/predictions_metadata.csv /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/predictions_metadata.csv /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/predictions_metadata.csv /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 root@69.19.136.83:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/predictions_metadata.csv /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/*" /Users/irfanjamil/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/*" /Users/irfanjamil/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/*" /Users/irfanjamil/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/
+```
+
+```bash
+scp -P 11027 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.83:/workspace/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/*" /Users/irfanjamil/Reasoning-Theater/plots/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/
 ```

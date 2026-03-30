@@ -55,6 +55,14 @@ class RunData:
         )
 
     @property
+    def median_steps_per_question(self) -> int:
+        """Median number of reasoning steps per question (from probe rows only)."""
+        probe_df = self.step_level_df[self.step_level_df['layer_idx'] >= 0]
+        key_col = 'question_hash' if 'question_hash' in probe_df.columns else 'question_idx'
+        steps = probe_df.groupby(key_col)['step_idx'].max() + 1
+        return max(1, int(np.median(steps)))
+
+    @property
     def num_questions(self) -> int:
         return len(self.metadata_df)
 

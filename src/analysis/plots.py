@@ -385,13 +385,16 @@ def compute_agreement_by_position(
 def plot_probe_forced_agreement(
     run: "RunData",
     probe_layer: Optional[int] = None,
-    num_bins: int = 100,
+    num_bins: Optional[int] = None,
     figsize: tuple = (14, 6),
     save: bool = False,
 ) -> plt.Figure:
     """Plot agreement between probe and forced answering by relative position."""
     if probe_layer is None:
         probe_layer = run.best_layer
+
+    if num_bins is None:
+        num_bins = run.median_steps_per_question
 
     data = compute_agreement_by_position(
         run.step_level_df, run.metadata_df, probe_layer, num_bins
@@ -514,7 +517,7 @@ def compute_method_accuracy_by_position(
 def plot_early_decoding_accuracy(
     runs: "RunData | list[RunData]",
     probe_layer: Optional[int] = None,
-    num_bins: int = 100,
+    num_bins: Optional[int] = None,
     figsize: tuple = (12, 6),
     save: bool = False,
 ) -> plt.Figure:
@@ -527,6 +530,9 @@ def plot_early_decoding_accuracy(
 
     if probe_layer is None:
         probe_layer = runs[0].best_layer
+
+    if num_bins is None:
+        num_bins = min(r.median_steps_per_question for r in runs)
 
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -1571,7 +1577,7 @@ def plot_early_exit_combined(
 def plot_early_decoding_accuracy_sidebyside(
     runs: "list[RunData]",
     probe_layer: Optional[int] = None,
-    num_bins: int = 100,
+    num_bins: Optional[int] = None,
     figsize: tuple = (18, 7),
     save: bool = False,
 ) -> plt.Figure:
@@ -1581,6 +1587,9 @@ def plot_early_decoding_accuracy_sidebyside(
 
     if probe_layer is None:
         probe_layer = runs[0].best_layer
+
+    if num_bins is None:
+        num_bins = min(r.median_steps_per_question for r in runs)
 
     fig, axes = plt.subplots(1, 2, figsize=figsize, sharey=True)
 

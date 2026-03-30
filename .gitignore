@@ -26,3 +26,6 @@ streamlit_app/data/
 # Editor/tool config
 .claude/
 .devcontainer/
+
+#Misc
+scripts/step_distribution.py

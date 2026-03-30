@@ -1,12 +1,15 @@
 """Stage 1: Response generation using vLLM."""
 
+import gc
 import json
 import logging
 from pathlib import Path
 from typing import List
 
+import torch
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
+from vllm.distributed.parallel_state import destroy_model_parallel
 
 from .data_gen_config import DataGenerationConfig
 from .datasets import QuestionData, load_dataset_questions
@@ -100,3 +103,9 @@ def generate_responses(config: DataGenerationConfig) -> None:
             failed += 1
 
     logger.info(f"Stage 1 complete: {successful} successful, {failed} failed")
+
+    destroy_model_parallel()
+    del llm
+    gc.collect()
+    torch.cuda.empty_cache()
+    logger.info("GPU memory released")
