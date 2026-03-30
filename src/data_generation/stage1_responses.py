@@ -12,7 +12,7 @@ from vllm import LLM, SamplingParams
 from vllm.distributed.parallel_state import destroy_model_parallel
 
 from .data_gen_config import DataGenerationConfig
-from .datasets import QuestionData, load_dataset_questions
+from .dataset_loaders import QuestionData, load_dataset_questions
 from .utils import format_response_json, build_chat_messages
 
 logger = logging.getLogger(__name__)

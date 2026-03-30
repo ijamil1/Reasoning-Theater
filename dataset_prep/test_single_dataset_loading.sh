@@ -17,7 +17,7 @@ uv run --project "${SCRIPT_DIR}" python -c "
 import yaml, sys, textwrap
 from pathlib import Path
 from src.data_generation.data_gen_config import DataGenerationConfig
-from src.data_generation.datasets import load_dataset_questions
+from src.data_generation.dataset_loaders import load_dataset_questions
 
 cfg = yaml.safe_load(open(sys.argv[1]))
 dg = cfg['data_generation']
