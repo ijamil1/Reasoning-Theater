@@ -1,3 +1,12 @@
+# /// script
+# dependencies = [
+#   "datasets>=2.18",
+#   "requests>=2.31",
+#   "python-dotenv>=1.0",
+#   "tqdm>=4.66",
+# ]
+# ///
+
 """Select 3 hardest distractors per MMLU-Pro question via OpenRouter LLM."""
 
 import argparse

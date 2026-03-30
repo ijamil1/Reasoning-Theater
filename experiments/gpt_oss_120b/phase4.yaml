@@ -11,6 +11,9 @@ datasets:
   - name: gpqa_diamond
     responses_dir: data/gpt_oss_120b/gpqa/stage1_responses
     activations_dir: data/gpt_oss_120b/gpqa/stage2_activations
+  - name: mmlu_pro
+    responses_dir: data/gpt_oss_120b/mmlu_pro/stage1_responses
+    activations_dir: data/gpt_oss_120b/mmlu_pro/stage2_activations
 
 probe_base:
   num_layers: 36

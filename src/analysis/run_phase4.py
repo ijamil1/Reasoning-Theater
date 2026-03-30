@@ -6,7 +6,7 @@ single selected layer, then evaluates each trained probe on every dataset's
 test split — including its own training dataset (diagonal = same-domain
 sanity check).
 
-The result is a 4×4 raw accuracy matrix and a corresponding degradation
+The result is a raw accuracy matrix and a corresponding degradation
 matrix where degradation[A][B] = accuracy[A][B] - accuracy[A][A].  Diagonal
 cells are 0 in the degradation matrix; off-diagonal cells are typically
 negative (transfer loss).
@@ -264,12 +264,13 @@ def _fmt(val: float, as_pct: bool = True) -> str:
 
 def print_matrix(
     matrix: Dict[str, Dict[str, float]],
-    dataset_names: List[str],
+    train_names: List[str],
+    eval_names: List[str],
     title: str,
     as_pct: bool = True,
 ) -> None:
     col_w = 16
-    header = f"{'':22}" + "".join(f"{name:>{col_w}}" for name in dataset_names)
+    header = f"{'':22}" + "".join(f"{name:>{col_w}}" for name in eval_names)
     sep = "=" * len(header)
     print(f"\n{sep}")
     print(title)
@@ -277,9 +278,9 @@ def print_matrix(
     print(sep)
     print(header)
     print("-" * len(header))
-    for train_name in dataset_names:
+    for train_name in train_names:
         row = f"{train_name:<22}"
-        for eval_name in dataset_names:
+        for eval_name in eval_names:
             val = matrix.get(train_name, {}).get(eval_name, float("nan"))
             row += f"{_fmt(val, as_pct):>{col_w}}"
         print(row)
@@ -288,18 +289,19 @@ def print_matrix(
 
 def save_matrix_csv(
     matrix: Dict[str, Dict[str, float]],
-    dataset_names: List[str],
+    train_names: List[str],
+    eval_names: List[str],
     path: Path,
     as_pct: bool = True,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["train_dataset"] + list(dataset_names)
+    fieldnames = ["train_dataset"] + list(eval_names)
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for train_name in dataset_names:
+        for train_name in train_names:
             row: dict = {"train_dataset": train_name}
-            for eval_name in dataset_names:
+            for eval_name in eval_names:
                 val = matrix.get(train_name, {}).get(eval_name, float("nan"))
                 row[eval_name] = _fmt(val, as_pct)
             writer.writerow(row)
@@ -308,7 +310,8 @@ def save_matrix_csv(
 
 def plot_matrix(
     matrix: Dict[str, Dict[str, float]],
-    dataset_names: List[str],
+    train_names: List[str],
+    eval_names: List[str],
     title: str,
     plots_dir: Path,
     filename_stem: str,
@@ -321,11 +324,12 @@ def plot_matrix(
     import matplotlib.pyplot as plt
 
     plots_dir.mkdir(parents=True, exist_ok=True)
-    n = len(dataset_names)
+    n_rows = len(train_names)
+    n_cols = len(eval_names)
 
-    data = np.full((n, n), np.nan)
-    for i, train_name in enumerate(dataset_names):
-        for j, eval_name in enumerate(dataset_names):
+    data = np.full((n_rows, n_cols), np.nan)
+    for i, train_name in enumerate(train_names):
+        for j, eval_name in enumerate(eval_names):
             val = matrix.get(train_name, {}).get(eval_name, float("nan"))
             if not np.isnan(val):
                 data[i, j] = val * 100
@@ -339,21 +343,21 @@ def plot_matrix(
         vmin = center - extreme
         vmax = center + extreme
 
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(max(5, n_cols * 1.5), max(4, n_rows * 1.2)))
     masked = np.ma.masked_invalid(data)
     im = ax.imshow(masked, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
     plt.colorbar(im, ax=ax, label=colorbar_label)
 
-    ax.set_xticks(range(n))
-    ax.set_yticks(range(n))
-    ax.set_xticklabels(dataset_names, rotation=30, ha="right")
-    ax.set_yticklabels(dataset_names)
+    ax.set_xticks(range(n_cols))
+    ax.set_yticks(range(n_rows))
+    ax.set_xticklabels(eval_names, rotation=30, ha="right")
+    ax.set_yticklabels(train_names)
     ax.set_xlabel("Eval dataset")
     ax.set_ylabel("Train dataset")
     ax.set_title(title)
 
-    for i in range(n):
-        for j in range(n):
+    for i in range(n_rows):
+        for j in range(n_cols):
             val = data[i, j]
             if not np.isnan(val):
                 norm_val = (val - vmin) / (vmax - vmin + 1e-8)
@@ -387,13 +391,11 @@ def main() -> None:
     seed = int(results_raw.get("seed", 42))
     run_name_prefix = results_raw.get("run_name_prefix", "phase4")
     summary_csv_path = Path(results_raw.get("summary_csv", "results/phase4_summary.csv"))
-    degradation_csv_path = summary_csv_path.with_name(
-        summary_csv_path.stem + "_degradation.csv"
-    )
     plots_dir = results_dir / "phase4_plots"
 
     datasets: List[dict] = phase4_cfg["datasets"]
-    dataset_names: List[str] = [d["name"] for d in datasets]
+    eval_dataset_names: List[str] = [d["name"] for d in datasets]
+    train_dataset_names: List[str] = [n for n in eval_dataset_names if n != "gpqa_diamond"]
     pb = phase4_cfg["probe_base"]
     layer_idx: int = int(pb.get("selected_layer", 63))
     probe_type: str = str(pb.get("probe_type", "attention"))
@@ -406,9 +408,10 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
-    logger.info(f"Datasets: {dataset_names}")
+    logger.info(f"Train datasets: {train_dataset_names}")
+    logger.info(f"Eval datasets: {eval_dataset_names}")
     logger.info(f"Probe type: {probe_type}, Layer: {layer_idx}")
-    logger.info(f"Total training runs: {len(datasets)}, total eval cells: {len(datasets)**2}")
+    logger.info(f"Total training runs: {len(train_dataset_names)}, total eval cells: {len(train_dataset_names) * len(eval_dataset_names)}")
 
     # ------------------------------------------------------------------
     # Step 0: Setup — generate split + metadata for every dataset once.
@@ -447,9 +450,11 @@ def main() -> None:
     # acc_matrix_raw stores [acc@p25, acc@p50, acc@p75, acc@p90] per cell.
     # ------------------------------------------------------------------
     _FRACS = ["p25", "p50", "p75", "p90"]
-    acc_matrix_raw: Dict[str, Dict[str, List[float]]] = {n: {} for n in dataset_names}
+    acc_matrix_raw: Dict[str, Dict[str, List[float]]] = {n: {} for n in train_dataset_names}
 
     for train_ds in datasets:
+        if train_ds["name"] not in train_dataset_names:
+            continue
         train_name = train_ds["name"]
         logger.info(f"\n{'='*60}")
         logger.info(f"Outer loop — training probe on: {train_name}")
@@ -457,7 +462,9 @@ def main() -> None:
         train_cfg = build_train_cfg(
             phase4_cfg, train_ds, run_name_prefix, results_dir, seed
         )
-        train_one_layer(layer_idx, train_cfg, splits[train_name], meta_maps[train_name])
+        model_path = Path(results_dir) / "models" / f"{run_name_prefix}_train_{train_name}" / f"probe_layer{layer_idx}.pth"
+        if not model_path.exists() and train_name != "gpqa_diamond":
+            train_one_layer(layer_idx, train_cfg, splits[train_name], meta_maps[train_name])
 
         # Instantiate probe and load the best checkpoint saved by train_one_layer.
         model = instantiate_probe(probe_type, hidden_dim, output_dim, train_cfg)
@@ -499,14 +506,13 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     # Step 3: Fan out into 5 accuracy matrices (one per position + avg)
-    # and 5 degradation matrices.
     # ------------------------------------------------------------------
     def _extract_pos_matrix(pos_idx: Optional[int]) -> Dict[str, Dict[str, float]]:
         """Extract a scalar matrix for position pos_idx, or average if None."""
         mat: Dict[str, Dict[str, float]] = {}
-        for tn in dataset_names:
+        for tn in train_dataset_names:
             mat[tn] = {}
-            for en in dataset_names:
+            for en in eval_dataset_names:
                 vals = acc_matrix_raw[tn].get(en, [float("nan")] * len(_FRACS))
                 if pos_idx is None:
                     valid = [v for v in vals if not np.isnan(v)]
@@ -515,64 +521,35 @@ def main() -> None:
                     mat[tn][en] = vals[pos_idx] if pos_idx < len(vals) else float("nan")
         return mat
 
-    def _deg_matrix(acc_mat: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
-        deg: Dict[str, Dict[str, float]] = {}
-        for tn in dataset_names:
-            deg[tn] = {}
-            diag = acc_mat[tn].get(tn, float("nan"))
-            for en in dataset_names:
-                val = acc_mat[tn].get(en, float("nan"))
-                if np.isnan(val) or np.isnan(diag):
-                    deg[tn][en] = float("nan")
-                else:
-                    deg[tn][en] = val - diag
-        return deg
-
-    # Build the 5 pairs: (label, acc_matrix, deg_matrix)
+    # Build the 5 accuracy matrices (one per position + avg)
     position_specs = [(f, i) for i, f in enumerate(_FRACS)] + [("avg", None)]
     matrix_sets = []
     for label, pos_idx in position_specs:
         acc_mat = _extract_pos_matrix(pos_idx)
-        deg_mat = _deg_matrix(acc_mat)
-        matrix_sets.append((label, acc_mat, deg_mat))
+        matrix_sets.append((label, acc_mat))
 
     # ------------------------------------------------------------------
-    # Step 4: Print, save, and plot all 10 matrices.
+    # Step 4: Print, save, and plot all 5 matrices.
     # ------------------------------------------------------------------
-    for label, acc_mat, deg_mat in matrix_sets:
+    for label, acc_mat in matrix_sets:
         print_matrix(
             acc_mat,
-            dataset_names,
+            train_dataset_names,
+            eval_dataset_names,
             f"Phase 4 — Raw Accuracy Matrix (%) [{label}]",
-        )
-        print_matrix(
-            deg_mat,
-            dataset_names,
-            f"Phase 4 — Degradation Matrix [{label}] (accuracy[A][B] - accuracy[A][A])",
         )
 
         acc_csv = summary_csv_path.with_name(f"{summary_csv_path.stem}_{label}.csv")
-        deg_csv = degradation_csv_path.with_name(f"{degradation_csv_path.stem}_{label}.csv")
-        save_matrix_csv(acc_mat, dataset_names, acc_csv)
-        save_matrix_csv(deg_mat, dataset_names, deg_csv)
+        save_matrix_csv(acc_mat, train_dataset_names, eval_dataset_names, acc_csv)
 
         plot_matrix(
             acc_mat,
-            dataset_names,
+            train_dataset_names,
+            eval_dataset_names,
             f"Phase 4: Transfer Accuracy Matrix (%) [{label}]",
             plots_dir,
             f"accuracy_matrix_{label}",
             cmap="Blues",
-        )
-        plot_matrix(
-            deg_mat,
-            dataset_names,
-            f"Phase 4: Degradation Matrix [{label}]\n(accuracy[A][B] − accuracy[A][A])",
-            plots_dir,
-            f"degradation_matrix_{label}",
-            cmap="RdBu",
-            center=0.0,
-            colorbar_label="Accuracy Δ (pp)",
         )
 
     logger.info("Phase 4 complete.")

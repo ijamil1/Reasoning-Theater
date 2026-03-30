@@ -141,18 +141,21 @@ def setup_data(cfg: ExperimentConfig) -> None:
         shutil.copy2(cfg.data.split_path, split_path)
     else:
         if not split_path.exists():
-            train_ratio, val_ratio, _ = cfg.setup.train_val_test_split_ratio
-            rng = random.Random(cfg.run.seed)
             hashes = [row["question_hash"] for row in metadata_rows]
-            rng.shuffle(hashes)
-            n = len(hashes)
-            train_end = int(n * train_ratio)
-            val_end = int(n * (train_ratio + val_ratio))
-            split = {
-                "train": hashes[:train_end],
-                "val": hashes[train_end:val_end],
-                "test": hashes[val_end:],
-            }
+            if cfg.data.dataset_name == "gpqa_diamond":
+                split = {"train": [], "val": [], "test": hashes}
+            else:
+                train_ratio, val_ratio, _ = cfg.setup.train_val_test_split_ratio
+                rng = random.Random(cfg.run.seed)
+                rng.shuffle(hashes)
+                n = len(hashes)
+                train_end = int(n * train_ratio)
+                val_end = int(n * (train_ratio + val_ratio))
+                split = {
+                    "train": hashes[:train_end],
+                    "val": hashes[train_end:val_end],
+                    "test": hashes[val_end:],
+                }
             split_path.parent.mkdir(parents=True, exist_ok=True)
             split_path.write_text(json.dumps(split, indent=2), encoding="utf-8")
 

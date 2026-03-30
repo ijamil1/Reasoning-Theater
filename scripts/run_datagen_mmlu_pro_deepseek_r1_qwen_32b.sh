@@ -11,9 +11,6 @@ DATASETS=(
     "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_datagen.yaml"
 )
 
-echo "=== Selecting MMLU-Pro distractors ==="
-uv run python "${ROOT_DIR}/src/data_generation/select_mmlu_pro_distractors.py"
-
 for yaml in "${DATASETS[@]}"; do
     bash "${ROOT_DIR}/scripts/run_datagen.sh" "${yaml}" both --layer "${FINAL_LAYER}"
 done
