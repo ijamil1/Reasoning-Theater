@@ -21,6 +21,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "vllm==0.14.1",
     "nnsight>=0.5.15",
+    "hf-transfer>=0.1.9",
 ]
 
 [tool.hatch.build.targets.wheel]
