@@ -232,7 +232,7 @@ def instantiate_probe(
         )
     if probe_type == "attention_mlp":
         return AttentionMLPProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.mlp_hidden_dim)
-    return AttentionProbe(hidden_dim, output_dim, torch.bfloat16, False, cfg.probe.mlp_hidden_dim)
+    return AttentionProbe(hidden_dim, output_dim, torch.bfloat16, True, cfg.probe.mlp_hidden_dim)
 
 
 def _peek_hidden_dim(activations_dir: Path, layer_idx: int) -> Optional[int]:
