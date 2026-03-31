@@ -106,7 +106,7 @@ def build_setup_cfg(
     return ExperimentConfig(
         run=run,
         data=data,
-        setup=SetupConfig(enabled=True, train_val_test_split_ratio=[0.8, 0.1, 0.1]),
+        setup=SetupConfig(enabled=True, train_val_test_split_ratio=[0.7, 0.1, 0.2]),
         probe=probe,
         forced_answer=ForcedAnswerConfig(enabled=False),
         cot_monitor=CotMonitorConfig(enabled=False),
