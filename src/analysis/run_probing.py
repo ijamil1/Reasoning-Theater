@@ -36,7 +36,7 @@ CHOICE_TO_IDX = {"A": 0, "B": 1, "C": 2, "D": 3}
 
 
 class AttentionProbe(torch.nn.Module):
-    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, mlp: bool = False, mlp_hidden_dim: int = 32) -> None:
+    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, mlp: bool = True, mlp_hidden_dim: int = 32) -> None:
         super().__init__()
         self.mlp = mlp
         self.q = torch.nn.Linear(in_features, 1, dtype=dtype)
