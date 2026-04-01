@@ -142,6 +142,10 @@ def setup_data(cfg: ExperimentConfig) -> None:
     else:
         if not split_path.exists():
             hashes = [row["question_hash"] for row in metadata_rows]
+            if cfg.data.dataset_name == "mmlu_pro":
+                rng_ds = random.Random(cfg.run.seed)
+                rng_ds.shuffle(hashes)
+                hashes = hashes[:3000]
             if cfg.data.dataset_name == "gpqa_diamond":
                 split = {"train": [], "val": [], "test": hashes}
             else:
