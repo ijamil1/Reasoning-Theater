@@ -821,51 +821,47 @@ def write_eval_outputs(layer_idx: int, model: torch.nn.Module, loader: DataLoade
             questions_processed += 1
 
             rows_written = 0
-            # File lock needed: multiple layer jobs append to the same CSV
-            with token_csv.open("a", newline="", encoding="utf-8") as handle:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-                try:
-                    writer = csv.DictWriter(handle, fieldnames=TOKEN_HEADERS, quoting=csv.QUOTE_MINIMAL)
-                    for token_idx in range(full_seq_len):
-                        if cfg.probe.label_type == "model_correct":
-                            prob = float(probs_all_cpu[token_idx].item())
-                            prob_vector = [1.0 - prob, prob]
-                            prediction_display = "correct" if prob > 0.5 else "incorrect"
+            token_csv.parent.mkdir(parents=True, exist_ok=True)
+            with token_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=TOKEN_HEADERS, quoting=csv.QUOTE_MINIMAL)
+                writer.writeheader()
+                for token_idx in range(full_seq_len):
+                    if cfg.probe.label_type == "model_correct":
+                        prob = float(probs_all_cpu[token_idx].item())
+                        prob_vector = [1.0 - prob, prob]
+                        prediction_display = "correct" if prob > 0.5 else "incorrect"
+                    else:
+                        probs_token = probs_all_cpu[token_idx]
+                        prob_vector = [float(val) for val in probs_token.tolist()]
+                        pred_idx = int(preds_all_cpu[token_idx].item())
+                        prediction_display = ["A", "B", "C", "D"][pred_idx] if pred_idx < 4 else str(pred_idx)
+                    if token_idx < len(response_tokens):
+                        token_id = response_tokens[token_idx]
+                        token_piece = tokenizer.convert_ids_to_tokens(token_id, skip_special_tokens=False)
+                        if isinstance(token_piece, str):
+                            token_text = tokenizer.convert_tokens_to_string([token_piece]) or token_piece
                         else:
-                            probs_token = probs_all_cpu[token_idx]
-                            prob_vector = [float(val) for val in probs_token.tolist()]
-                            pred_idx = int(preds_all_cpu[token_idx].item())
-                            prediction_display = ["A", "B", "C", "D"][pred_idx] if pred_idx < 4 else str(pred_idx)
-                        if token_idx < len(response_tokens):
-                            token_id = response_tokens[token_idx]
-                            token_piece = tokenizer.convert_ids_to_tokens(token_id, skip_special_tokens=False)
-                            if isinstance(token_piece, str):
-                                token_text = tokenizer.convert_tokens_to_string([token_piece]) or token_piece
-                            else:
-                                token_text = str(token_piece)
-                        elif token_idx < len(response_strs):
-                            token_text = str(response_strs[token_idx])
-                        else:
-                            token_text = ""
-                        step_idx = token_to_step.get(token_idx, -1)
-                        writer.writerow(
-                            {
-                                "question_hash": str(qhash),
-                                "question_idx": str(question_idx),
-                                "layer_idx": str(layer_idx),
-                                "token_idx": int(token_idx),
-                                "step_idx": str(step_idx),
-                                "token_text": str(token_text) if token_text else "",
-                                "decoder_type": "probe",
-                                "decoder_pred": str(prediction_display),
-                                "decoder_output": json.dumps(prob_vector),
-                            }
-                        )
-                        rows_written += 1
-                    handle.flush()
-                finally:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            
+                            token_text = str(token_piece)
+                    elif token_idx < len(response_strs):
+                        token_text = str(response_strs[token_idx])
+                    else:
+                        token_text = ""
+                    step_idx = token_to_step.get(token_idx, -1)
+                    writer.writerow(
+                        {
+                            "question_hash": str(qhash),
+                            "question_idx": str(question_idx),
+                            "layer_idx": str(layer_idx),
+                            "token_idx": int(token_idx),
+                            "step_idx": str(step_idx),
+                            "token_text": str(token_text) if token_text else "",
+                            "decoder_type": "probe",
+                            "decoder_pred": str(prediction_display),
+                            "decoder_output": json.dumps(prob_vector),
+                        }
+                    )
+                    rows_written += 1
+
             if rows_written == 0:
                 logger.warning(f"No rows written for {qhash} (seq_len={full_seq_len}, response_tokens={len(response_tokens)})")
 
@@ -881,38 +877,51 @@ def write_eval_outputs(layer_idx: int, model: torch.nn.Module, loader: DataLoade
                     prob_vector = [float(val) for val in probs_all_cpu[token_idx].tolist()]
                 step_outputs.setdefault(step_idx, []).append(prob_vector)
 
-            with step_csv.open("a", newline="", encoding="utf-8") as handle:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            step_csv.parent.mkdir(parents=True, exist_ok=True)
+            new_step_rows = []
+            for step_idx, step_text in enumerate(step_texts):
+                vectors = step_outputs.get(step_idx) or []
+                if not vectors:
+                    continue
+                avg = torch.tensor(vectors[-1], dtype=torch.float32)
+                avg_list = avg.tolist()
+                if cfg.probe.label_type == "model_correct":
+                    prob = float(avg_list[1]) if len(avg_list) > 1 else float(avg_list[0])
+                    prediction_display = "correct" if prob > 0.5 else "incorrect"
+                else:
+                    pred_idx = int(torch.argmax(avg).item())
+                    prediction_display = ["A", "B", "C", "D"][pred_idx] if pred_idx < 4 else str(pred_idx)
+                new_step_rows.append(
+                    {
+                        "question_hash": str(qhash),
+                        "question_idx": str(question_idx),
+                        "layer_idx": str(layer_idx),
+                        "step_idx": str(step_idx),
+                        "step_text": str(step_text) if step_text else "",
+                        "decoder_type": "probe",
+                        "decoder_pred": str(prediction_display),
+                        "decoder_output": json.dumps(avg_list),
+                        "forced_completion": "",
+                    }
+                )
+
+            lock_path = step_csv.with_suffix(".lock")
+            with lock_path.open("w") as lock_handle:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
                 try:
-                    writer = csv.DictWriter(handle, fieldnames=STEP_HEADERS, quoting=csv.QUOTE_MINIMAL)
-                    for step_idx, step_text in enumerate(step_texts):
-                        vectors = step_outputs.get(step_idx) or []
-                        if not vectors:
-                            continue
-                        avg = torch.tensor(vectors[-1], dtype=torch.float32)
-                        avg_list = avg.tolist()
-                        if cfg.probe.label_type == "model_correct":
-                            prob = float(avg_list[1]) if len(avg_list) > 1 else float(avg_list[0])
-                            prediction_display = "correct" if prob > 0.5 else "incorrect"
-                        else:
-                            pred_idx = int(torch.argmax(avg).item())
-                            prediction_display = ["A", "B", "C", "D"][pred_idx] if pred_idx < 4 else str(pred_idx)
-                        writer.writerow(
-                            {
-                                "question_hash": str(qhash),
-                                "question_idx": str(question_idx),
-                                "layer_idx": str(layer_idx),
-                                "step_idx": str(step_idx),
-                                "step_text": str(step_text) if step_text else "",
-                                "decoder_type": "probe",
-                                "decoder_pred": str(prediction_display),
-                                "decoder_output": json.dumps(avg_list),
-                                "forced_completion": "",
-                            }
-                        )
-                    handle.flush()
+                    existing_rows = []
+                    if step_csv.exists():
+                        with step_csv.open("r", newline="", encoding="utf-8") as rhandle:
+                            reader = csv.DictReader(rhandle)
+                            existing_rows = [row for row in reader if row.get("decoder_type") != "probe"]
+                    merged_rows = existing_rows + new_step_rows
+                    merged_rows.sort(key=lambda r: (int(r["step_idx"]), int(r["layer_idx"])))
+                    with step_csv.open("w", newline="", encoding="utf-8") as whandle:
+                        writer = csv.DictWriter(whandle, fieldnames=STEP_HEADERS, quoting=csv.QUOTE_MINIMAL)
+                        writer.writeheader()
+                        writer.writerows(merged_rows)
                 finally:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
     
     if total_predictions > 0:
         test_acc_micro = (correct_predictions / total_predictions) * 100.0

@@ -906,12 +906,14 @@ def compute_slope_comparison_stats(
 def compute_area_between_curves(
     run: "RunData",
     probe_layer: Optional[int] = None,
-    num_bins: int = 100,
+    num_bins: Optional[int] = None,
     save: bool = False,
 ) -> dict:
     """Compute area between accuracy curves for probe vs CoT monitor and forced vs CoT monitor."""
     if probe_layer is None:
         probe_layer = run.best_layer
+    if num_bins is None:
+        num_bins = run.median_steps_per_question
 
     method_data = compute_method_accuracy_by_position(
         run.step_level_df, run.metadata_df, probe_layer, num_bins

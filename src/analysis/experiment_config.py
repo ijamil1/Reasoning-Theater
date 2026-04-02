@@ -136,6 +136,7 @@ class ExperimentConfig:
             eval=bool(probe_raw.get("eval", True)),
             checkpoint=Path(probe_raw["checkpoint"]) if probe_raw.get("checkpoint") else None,
             reuse_run_root=Path(probe_raw["reuse_run_root"]) if probe_raw.get("reuse_run_root") else None,
+            norm_stats_run_root=Path(probe_raw["norm_stats_run_root"]) if probe_raw.get("norm_stats_run_root") else None,
             num_layers=int(probe_raw["num_layers"]),
             selected_layer=int(probe_raw.get("selected_layer", -1)),
             probe_type=str(probe_raw.get("probe_type", "attention")),
