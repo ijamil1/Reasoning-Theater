@@ -7,10 +7,10 @@ set -euo pipefail
 ROOT_DIR="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 
 DATASETS=(
-    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_analysis.yaml"
-    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/arc_challenge_analysis.yaml"
-    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/medqa_analysis.yaml"
-    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/gpqa_analysis.yaml"
+    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_analysis.yaml"
+    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/arc_challenge_analysis.yaml"
+    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/medqa_analysis.yaml"
+    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/gpqa_analysis.yaml"
     "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_analysis.yaml"
 )
 
