@@ -42,7 +42,7 @@ cot_monitor:
   api_key_env: OPENROUTER_API_KEY
   max_tokens: 8
   temperature: 0.0
-  per_question_concurrency: 8
+  per_question_concurrency: 16
 
 plots:
   enabled: true
