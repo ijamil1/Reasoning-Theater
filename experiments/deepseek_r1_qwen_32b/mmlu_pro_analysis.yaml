@@ -14,7 +14,7 @@ setup:
   enabled: true
 
 probe:
-  enabled: false
+  enabled: true
   train: false
   eval: true
   checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer63.pth
