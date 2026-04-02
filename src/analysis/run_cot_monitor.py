@@ -124,7 +124,7 @@ def request_completion(
             {"role": "user", "content": user_message},
         ],
     }
-    response = requests.post(API_URL, headers=headers, json=body, timeout=60)
+    response = requests.post(API_URL, headers=headers, json=body, timeout=90)
     response.raise_for_status()
     payload = response.json()
     choices = payload.get("choices") or []
