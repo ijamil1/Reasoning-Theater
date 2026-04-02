@@ -845,15 +845,10 @@ def compute_quadratic_slope(accuracy_series: pd.Series) -> tuple[float, tuple[fl
 
 
 def compute_slope_comparison_stats(
-    step_level_df: pd.DataFrame,
-    metadata_df: pd.DataFrame,
-    probe_layer: int,
-    num_bins: int = 20,
+    method_data: dict,
+    num_bins: int,
 ) -> dict:
     """Compute slope comparison stats between probe/forced vs CoT monitor."""
-    method_data = compute_method_accuracy_by_position(
-        step_level_df, metadata_df, probe_layer, num_bins=num_bins
-    )
 
     results = {}
 
@@ -978,9 +973,7 @@ def compute_area_between_curves(
     logit_stability_stats = compute_probe_logit_stability(run, probe_layer)
     results['probe_logit_stability'] = logit_stability_stats
 
-    slope_stats = compute_slope_comparison_stats(
-        run.step_level_df, run.metadata_df, probe_layer, num_bins=20
-    )
+    slope_stats = compute_slope_comparison_stats(method_data, num_bins=num_bins)
     results['slope_comparison'] = slope_stats
 
     if save:
@@ -1064,7 +1057,7 @@ def compute_area_between_curves(
             elif 'probe_logit_stability' in results:
                 f.write(f"  Error: {results['probe_logit_stability']['error']}\n")
 
-            f.write(f"\nSlope Comparison (5% bins, N/A = 0.25 for cot_monitor)\n")
+            f.write(f"\nSlope Comparison ({num_bins} bins, N/A = 0.25 for cot_monitor)\n")
             f.write(f"{'-'*50}\n")
             f.write(f"Two methods for computing average slope:\n")
             f.write(f"  1. Point-wise: mean of consecutive bin differences\n")
