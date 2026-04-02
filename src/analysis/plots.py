@@ -434,7 +434,7 @@ def plot_probe_forced_agreement(
         pad=25,
     )
 
-    xtick_positions = np.arange(0, num_bins + 1, num_bins // 10)
+    xtick_positions = np.arange(0, num_bins + 1, max(1, num_bins // 10))
     xtick_labels = [str(int(x / num_bins * 100)) for x in xtick_positions]
     ax.set_xticks(xtick_positions)
     ax.set_xticklabels(xtick_labels, fontsize=FONT_SIZE_HEATMAP_TICK_LABEL)
