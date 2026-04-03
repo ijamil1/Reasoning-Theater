@@ -17,7 +17,7 @@ datasets:
 
 probe_base:
   num_layers: 64
-  selected_layer: 63
+  selected_layer: 61
   probe_type: attention        # swap this to re-run with a different architecture
   label_type: model_ans
   batch_size: 64

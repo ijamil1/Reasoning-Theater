@@ -36,7 +36,7 @@ CHOICE_TO_IDX = {"A": 0, "B": 1, "C": 2, "D": 3}
 
 
 class AttentionProbe(torch.nn.Module):
-    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, mlp: bool = True, mlp_hidden_dim: int = 32) -> None:
+    def __init__(self, in_features: int, out_features: int, dtype: torch.dtype, mlp: bool = False, mlp_hidden_dim: int = 32) -> None:
         super().__init__()
         self.mlp = mlp
         self.q = torch.nn.Linear(in_features, 1, dtype=dtype)
@@ -501,7 +501,7 @@ def train_one_layer(layer_idx: int, cfg: ExperimentConfig, split: Dict[str, List
     elif probe_type == "attention_mlp":
         model = AttentionMLPProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.mlp_hidden_dim)
     else:  # "attention" (default)
-        model = AttentionProbe(hidden_dim, output_dim, torch.bfloat16, True, cfg.probe.mlp_hidden_dim)
+        model = AttentionProbe(hidden_dim, output_dim, torch.bfloat16, False, cfg.probe.mlp_hidden_dim)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
     model.to(device)

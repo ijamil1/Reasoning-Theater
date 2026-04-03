@@ -123,6 +123,7 @@ def build_train_cfg(
     """Build ExperimentConfig for training a probe on a given dataset."""
     pb = phase4_cfg["probe_base"]
     results_raw = phase4_cfg.get("results", {})
+    selected_layer = int(pb.get("selected_layer", 63))
     run = RunConfig(
         run_name=f"{run_name_prefix}_train_{dataset['name']}",
         results_dir=results_dir,
@@ -142,7 +143,7 @@ def build_train_cfg(
         enabled=True,
         train=True,
         eval=False,
-        selected_layer=int(pb.get("selected_layer", 63)),
+        selected_layer=selected_layer,
         probe_type=str(pb.get("probe_type", "attention")),
         label_type=str(pb.get("label_type", "model_ans")),
         batch_size=int(pb.get("batch_size", 64)),
@@ -232,7 +233,7 @@ def instantiate_probe(
         )
     if probe_type == "attention_mlp":
         return AttentionMLPProbe(hidden_dim, output_dim, torch.bfloat16, cfg.probe.mlp_hidden_dim)
-    return AttentionProbe(hidden_dim, output_dim, torch.bfloat16, True, cfg.probe.mlp_hidden_dim)
+    return AttentionProbe(hidden_dim, output_dim, torch.bfloat16, False, cfg.probe.mlp_hidden_dim)
 
 
 def _peek_hidden_dim(activations_dir: Path, layer_idx: int) -> Optional[int]:
