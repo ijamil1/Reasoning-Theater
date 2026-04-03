@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import sys
+import time
 
 csv.field_size_limit(sys.maxsize)
 from concurrent.futures import ThreadPoolExecutor
@@ -109,8 +110,8 @@ def request_completion(
     user_message: str,
     max_tokens: int,
     temperature: float,
-) -> str:
-    """Make API request to OpenRouter."""
+) -> tuple[str, float]:
+    """Make API request to OpenRouter. Returns (response_text, elapsed_seconds)."""
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -124,16 +125,18 @@ def request_completion(
             {"role": "user", "content": user_message},
         ],
     }
+    t0 = time.monotonic()
     response = requests.post(API_URL, headers=headers, json=body, timeout=30)
+    elapsed = time.monotonic() - t0
     response.raise_for_status()
     payload = response.json()
     choices = payload.get("choices") or []
     if not choices:
-        return ""
+        return "", elapsed
     message = choices[0].get("message") or {}
     content = message.get("content")
     if isinstance(content, str):
-        return content
+        return content, elapsed
     if isinstance(content, list):
         fragments = []
         for item in content:
@@ -141,8 +144,8 @@ def request_completion(
                 fragments.append(str(item.get("text", "")))
             else:
                 fragments.append(str(item))
-        return "".join(fragments)
-    return ""
+        return "".join(fragments), elapsed
+    return "", elapsed
 
 
 def build_cot_monitor_sequences(cfg: ExperimentConfig) -> Dict[str, List[str]]:
@@ -256,11 +259,11 @@ def run_cot_monitor_inference(
         question_results: List[Dict[str, str]] = []
         prompts_with_index: List[Tuple[int, str]] = list(enumerate(prompts))
         
-        def _run_request(prompt_item: Tuple[int, str]) -> Tuple[int, str]:
+        def _run_request(prompt_item: Tuple[int, str]) -> Tuple[int, str, float]:
             idx, prompt_text = prompt_item
             user_message = build_user_message(prompt_text)
             try:
-                raw_response = request_completion(
+                raw_response, elapsed = request_completion(
                     api_key=api_key,
                     model=cfg.cot_monitor.model,
                     user_message=user_message,
@@ -270,19 +273,21 @@ def run_cot_monitor_inference(
             except requests.RequestException as exc:
                 logger.warning(f"CoT monitor request failed for {question_hash} step {idx}: {exc}")
                 raw_response = ""
-            return idx, raw_response.strip()
-        
+                elapsed = -1.0
+            return idx, raw_response.strip(), elapsed
+
         with ThreadPoolExecutor(max_workers=cfg.cot_monitor.per_question_concurrency) as executor:
             responses = list(executor.map(_run_request, prompts_with_index))
-        
+
         responses.sort(key=lambda item: item[0])
-        for idx, raw_response in responses:
+        for idx, raw_response, elapsed in responses:
             parsed_answer = extract_answer(raw_response)
             question_results.append(
                 {
                     "prompt": prompts[idx],
                     "completion": raw_response,
                     "prediction": parsed_answer,
+                    "response_time_seconds": round(elapsed, 3),
                 }
             )
         
