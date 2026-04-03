@@ -15,14 +15,14 @@ setup:
 
 probe:
   enabled: true
-  train: false
+  train: true
   eval: true
   checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer63.pth
   norm_stats_run_root: /workspace/Reasoning-Theater/results/phase4_qwen_32b_train_mmlu
   normalize_acts: true
   recompute_norm_stats: false
   num_layers: 64
-  selected_layer: 63
+  selected_layer: 62
   probe_type: attention
   label_type: model_ans
   batch_size: 16
