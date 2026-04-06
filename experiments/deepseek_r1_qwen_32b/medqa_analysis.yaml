@@ -11,18 +11,18 @@ data:
   dataset_name: medqa
 
 setup:
-  enabled: false
+  enabled: true
 
 probe:
   enabled: true
   train: false
   eval: true
-  checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer63.pth
+  checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer61.pth
   norm_stats_run_root: /workspace/Reasoning-Theater/results/phase4_qwen_32b_train_mmlu
   normalize_acts: true
   recompute_norm_stats: false
   num_layers: 64
-  selected_layer: 63
+  selected_layer: 61
   probe_type: attention
   label_type: model_ans
   batch_size: 16
@@ -31,13 +31,14 @@ probe:
   num_epochs: 10
 
 forced_answer:
-  enabled: false
-  generate: true
+  enabled: true
+  generate: false
+  completions_path: /workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/forced_answer_completions.json
   tensor_parallel_size: 1
   batch_size: 100
 
 cot_monitor:
-  enabled: false
+  enabled: true
   model: google/gemini-2.5-flash
   api_key_env: OPENROUTER_API_KEY
   max_tokens: 8

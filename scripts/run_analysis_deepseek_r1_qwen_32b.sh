@@ -11,7 +11,7 @@ DATASETS=(
     "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/arc_challenge_analysis.yaml"
     "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/medqa_analysis.yaml"
     "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/gpqa_analysis.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_analysis.yaml"
+    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_analysis.yaml"
 )
 
 for yaml in "${DATASETS[@]}"; do
