@@ -110,6 +110,7 @@ def request_completion(
     user_message: str,
     max_tokens: int,
     temperature: float,
+    timeout: float = 30,
 ) -> tuple[str, float]:
     """Make API request to OpenRouter. Returns (response_text, elapsed_seconds)."""
     headers = {
@@ -126,7 +127,7 @@ def request_completion(
         ],
     }
     t0 = time.monotonic()
-    response = requests.post(API_URL, headers=headers, json=body, timeout=30)
+    response = requests.post(API_URL, headers=headers, json=body, timeout=timeout)
     elapsed = time.monotonic() - t0
     response.raise_for_status()
     payload = response.json()
@@ -239,29 +240,67 @@ def run_cot_monitor_inference(
     cfg: ExperimentConfig,
     sequences: Dict[str, List[str]],
     completions_path: Path,
+    existing_completions: Dict[str, List[Dict[str, str]]] | None = None,
 ) -> Dict[str, List[Dict[str, str]]]:
-    """Run CoT monitor LLM inference on sequences, writing incrementally."""
+    """Run CoT monitor LLM inference on sequences, writing incrementally.
+
+    Resumes from existing_completions:
+    - Questions absent from existing_completions are fully re-run.
+    - For questions already present, only steps with response_time_seconds == -1
+      (prior timeouts) are retried, with a fallback to a longer timeout.
+    """
     logger.info("Running CoT monitor LLM inference")
-    
+
     api_key = os.getenv(cfg.cot_monitor.api_key_env)
     if not api_key:
         raise RuntimeError(f"Missing API key. Set {cfg.cot_monitor.api_key_env} environment variable.")
-    
-    results: Dict[str, List[Dict[str, str]]] = {}
-    total_steps = 0
+
+    # Start from existing completions so we never lose already-successful results.
+    results: Dict[str, List[Dict[str, str]]] = dict(existing_completions) if existing_completions else {}
     completions_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    iterator = sequences.items()
+
+    # Determine which questions need (full or partial) work.
+    # A question needs work if:
+    #   - it is absent from existing completions entirely, OR
+    #   - it has fewer completed steps than the sequences file expects, OR
+    #   - any of its completed steps previously timed out (response_time_seconds == -1)
+    questions_to_run = {
+        qhash: prompts
+        for qhash, prompts in sequences.items()
+        if qhash not in results
+        or len(results[qhash]) < len(prompts)
+        or any(e.get("response_time_seconds", 0) == -1.0 for e in results[qhash])
+    }
+
+    logger.info(
+        f"{len(questions_to_run)} questions need inference "
+        f"({len(sequences) - len(questions_to_run)} already complete)"
+    )
+
+    if not questions_to_run:
+        return results
+
+    total_steps = 0
+    iterator = questions_to_run.items()
     if not cfg.cot_monitor.disable_tqdm and tqdm is not None:
-        iterator = tqdm(iterator, total=len(sequences), desc="Questions")
-    
+        iterator = tqdm(iterator, total=len(questions_to_run), desc="Questions")
+
     for question_hash, prompts in iterator:
-        question_results: List[Dict[str, str]] = []
-        prompts_with_index: List[Tuple[int, str]] = list(enumerate(prompts))
-        
+        existing_steps = results.get(question_hash, [])
+
+        # Build index of which steps need to be (re-)run.
+        # Steps missing entirely or previously timed out are included.
+        steps_to_run: List[Tuple[int, str]] = []
+        for idx, prompt_text in enumerate(prompts):
+            if idx >= len(existing_steps):
+                steps_to_run.append((idx, prompt_text))
+            elif existing_steps[idx].get("response_time_seconds", 0) == -1.0:
+                steps_to_run.append((idx, prompt_text))
+
         def _run_request(prompt_item: Tuple[int, str]) -> Tuple[int, str, float]:
             idx, prompt_text = prompt_item
             user_message = build_user_message(prompt_text)
+            # First attempt with standard timeout.
             try:
                 raw_response, elapsed = request_completion(
                     api_key=api_key,
@@ -269,36 +308,63 @@ def run_cot_monitor_inference(
                     user_message=user_message,
                     max_tokens=cfg.cot_monitor.max_tokens,
                     temperature=cfg.cot_monitor.temperature,
+                    timeout=30,
                 )
+                return idx, raw_response.strip(), elapsed
+            except requests.RequestException:
+                pass
+            # Retry once with extended timeout.
+            try:
+                raw_response, elapsed = request_completion(
+                    api_key=api_key,
+                    model=cfg.cot_monitor.model,
+                    user_message=user_message,
+                    max_tokens=cfg.cot_monitor.max_tokens,
+                    temperature=cfg.cot_monitor.temperature,
+                    timeout=90,
+                )
+                logger.info(f"Retry succeeded for {question_hash} step {idx} ({elapsed:.1f}s)")
+                return idx, raw_response.strip(), elapsed
             except requests.RequestException as exc:
-                logger.warning(f"CoT monitor request failed for {question_hash} step {idx}: {exc}")
-                raw_response = ""
-                elapsed = -1.0
-            return idx, raw_response.strip(), elapsed
+                logger.warning(f"CoT monitor request failed for {question_hash} step {idx} after retry: {exc}")
+                return idx, "", -1.0
 
         with ThreadPoolExecutor(max_workers=cfg.cot_monitor.per_question_concurrency) as executor:
-            responses = list(executor.map(_run_request, prompts_with_index))
+            new_responses = list(executor.map(_run_request, steps_to_run))
 
-        responses.sort(key=lambda item: item[0])
-        for idx, raw_response, elapsed in responses:
+        # Merge new responses back into the full per-question list.
+        # Extend existing_steps to cover all prompt indices first.
+        merged = list(existing_steps)
+        while len(merged) < len(prompts):
+            merged.append(None)
+
+        for idx, raw_response, elapsed in new_responses:
             parsed_answer = extract_answer(raw_response)
-            question_results.append(
-                {
-                    "prompt": prompts[idx],
-                    "completion": raw_response,
-                    "prediction": parsed_answer,
-                    "response_time_seconds": round(elapsed, 3),
+            merged[idx] = {
+                "prompt": prompts[idx],
+                "completion": raw_response,
+                "prediction": parsed_answer,
+                "response_time_seconds": round(elapsed, 3),
+            }
+
+        # Replace any remaining None slots (shouldn't happen) with empty entries.
+        for i in range(len(merged)):
+            if merged[i] is None:
+                merged[i] = {
+                    "prompt": prompts[i],
+                    "completion": "",
+                    "prediction": "N/A",
+                    "response_time_seconds": -1.0,
                 }
-            )
-        
-        total_steps += len(prompts)
-        results[question_hash] = question_results
-        
-        # Write incrementally after each question
+
+        total_steps += len(steps_to_run)
+        results[question_hash] = merged
+
+        # Write incrementally after each question, merging with full results dict.
         with completions_path.open("w", encoding="utf-8") as handle:
             json.dump(results, handle, ensure_ascii=False, indent=2)
-    
-    logger.info(f"Completed inference for {len(results)} questions ({total_steps} steps)")
+
+    logger.info(f"Completed inference: {len(results)} questions, {total_steps} steps processed")
     return results
 
 
@@ -436,14 +502,13 @@ def run_cot_monitor(cfg: ExperimentConfig) -> None:
         with sequences_path.open("w", encoding="utf-8") as handle:
             json.dump(sequences, handle, ensure_ascii=False, indent=2)
         logger.info(f"Saved sequences to {sequences_path}")
+    existing_completions: Dict[str, List[Dict[str, str]]] = {}
     if completions_path.exists():
         logger.info(f"Loading existing completions from {completions_path}")
         with completions_path.open("r", encoding="utf-8") as handle:
-            completions = json.load(handle)
-    else:
-        logger.info("Running CoT monitor LLM inference")
-        completions = run_cot_monitor_inference(cfg, sequences, completions_path)
-        logger.info(f"Saved completions to {completions_path}")
+            existing_completions = json.load(handle)
+
+    completions = run_cot_monitor_inference(cfg, sequences, completions_path, existing_completions)
     logger.info("Injecting CoT monitor predictions into step-level CSVs")
     processed = 0
     for qhash, entries in completions.items():
