@@ -90,7 +90,7 @@ This function computes five sets of statistics and writes them to `{run.plots_di
 For each pair:
 ```
 diff[bin] = method_acc[bin] - cot_monitor_acc[bin]
-area = sum(diff) / num_bins * 100
+area = sum(diff) / num_bins * 100 <- basically avg accuracy diff
 mean_diff = mean(diff)
 ```
 Only bins present in **both** methods are included (inner join). Mean accuracy per method is `sum(accuracy_per_bin) / num_bins_compared` — **unweighted**, no correction for sample count per bin.
@@ -147,7 +147,7 @@ Slope is in units of **accuracy per full trace**.
 **Unit of analysis:** Every token at `probe_layer`, expanded into 4 `(confidence, correct)` pairs — one per option A/B/C/D. A trace of 100 tokens contributes 400 data points.
 
 - **X-axis:** `p[j]` — the raw softmax probability assigned to option `j`
-- **Y-axis:** Fraction of tokens in that confidence bin where `argmax(probs) == model_answer`
+- **Y-axis:** Fraction of `(token, option_j)` pairs in that confidence bin where option `j` == model's final answer
 - **Target:** Model's final answer
 
 The stored values are post-softmax probabilities (not logits), always in `[0, 1]` summing to 1.

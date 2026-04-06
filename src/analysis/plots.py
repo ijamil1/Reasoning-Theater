@@ -555,19 +555,18 @@ def plot_early_decoding_accuracy(
             else:
                 label = method_labels[method_name]
 
-            x = data['bin'].values / num_bins * 100
+            x = (data['bin'].values + 0.5) / num_bins * 100
 
             color = METHOD_COLORS[method_name][run_idx]
 
-            ax.plot(
+            ax.step(
                 x,
                 data['accuracy'].values,
+                where='mid',
                 color=color,
                 linestyle='-',
                 linewidth=2,
                 label=label,
-                marker='o' if num_bins <= 20 else None,
-                markersize=4,
             )
 
     ax.set_xlabel('Relative Position (%)', fontsize=FONT_SIZE_AXIS_LABEL, labelpad=10)
