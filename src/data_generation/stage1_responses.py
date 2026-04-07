@@ -13,7 +13,7 @@ from vllm.distributed.parallel_state import destroy_model_parallel
 
 from .data_gen_config import DataGenerationConfig
 from .dataset_loaders import QuestionData, load_dataset_questions
-from .utils import format_response_json, build_chat_messages
+from .utils import format_response_json, build_chat_messages, parse_answer_from_response_10
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,7 @@ def generate_responses(config: DataGenerationConfig) -> None:
         response_text = output.outputs[0].text
 
         try:
+            answer_parser = parse_answer_from_response_10 if config.dataset_name == "mmlu_pro_10" else None
             response_data = format_response_json(
                 question_id=question.question_hash,
                 question_data={
@@ -90,6 +91,7 @@ def generate_responses(config: DataGenerationConfig) -> None:
                 response=response_text,
                 tokenizer=tokenizer,
                 system_prompt=config.system_prompt,
+                answer_parser=answer_parser,
             )
 
             output_path = output_dir / f"{question.question_hash}.json"

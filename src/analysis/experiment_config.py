@@ -28,6 +28,7 @@ class DataConfig:
     forced_answers_path: Optional[Path] = None
     split_path: Optional[Path] = None
     dataset_name: Optional[str] = None
+    num_choices: int = 4  # Number of answer options (4 for A-D, 10 for A-J)
 
 
 @dataclass
@@ -114,6 +115,7 @@ class ExperimentConfig:
             forced_answers_path=Path(data_raw["forced_answers_path"]) if data_raw.get("forced_answers_path") else None,
             split_path=Path(data_raw["split_path"]) if data_raw.get("split_path") else None,
             dataset_name=data_raw.get("dataset_name"),
+            num_choices=int(data_raw.get("num_choices", 4)),
         )
 
         setup_raw = _section("setup", SetupConfig)

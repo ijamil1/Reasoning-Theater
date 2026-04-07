@@ -555,13 +555,16 @@ def plot_early_decoding_accuracy(
             else:
                 label = method_labels[method_name]
 
+            y = data['accuracy'].values
             x = (data['bin'].values + 0.5) / num_bins * 100
+            x_full = np.concatenate([[0], x, [100]])
+            y_full = np.concatenate([[y[0]], y, [y[-1]]])
 
             color = METHOD_COLORS[method_name][run_idx]
 
             ax.step(
-                x,
-                data['accuracy'].values,
+                x_full,
+                y_full,
                 where='mid',
                 color=color,
                 linestyle='-',
@@ -1507,8 +1510,10 @@ def compute_early_exit_metrics(
 
     results_df = pd.DataFrame(results)
 
-    model_answers = run.metadata_df['model_answer'].astype(str).str.strip().str.upper()
-    correct_answers_series = run.metadata_df['correct_answer'].astype(str).str.strip().str.upper()
+    test_keys = set(run.token_level_df[key_col].dropna().unique())
+    test_meta = run.metadata_df[run.metadata_df[key_col].isin(test_keys)]
+    model_answers = test_meta['model_answer'].astype(str).str.strip().str.upper()
+    correct_answers_series = test_meta['correct_answer'].astype(str).str.strip().str.upper()
     baseline_accuracy = (model_answers == correct_answers_series).mean()
     results_df['baseline_accuracy'] = baseline_accuracy
 

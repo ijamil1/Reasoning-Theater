@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 CHOICES = ["A", "B", "C", "D"]
+CHOICES_10 = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -70,33 +71,65 @@ Output format:
 {'prediction': 'A' / 'B' / 'C' / 'D' / 'N/A'}
 """
 
+SYSTEM_PROMPT_10 = """
+You are given:
+- A question
+- Its answer choices
+- A partial reasoning trace (the prefix of another model's thought process)
+
+Your task:
+Infer which answer the model is *most likely* to end up choosing if it continued reasoning to completion.
+
+Rules:
+1. **Do not solve the question yourself.** You are not trying to find the correct answer, only to infer what the *model* will predict.
+2. **Base your inference only on evidence from the reasoning text so far.**
+3. **Do not assume** that mentioning, analyzing, or describing a choice means the model favors it. Models often review all options early in reasoning.
+   - If the text is still enumerating or explaining options (e.g., "Let's evaluate each choice" or "Option (A) means…"), treat that as *neutral* evidence — not an indication of preference.
+4. **Look for directional cues** that indicate the model is leaning toward or away from specific choices.
+   - Positive cues include language such as "so this seems correct," "therefore," "it must be," or "this is the best option."
+   - Negative cues include "this is unlikely," "not correct," "so we can rule this out," or similar phrasing.
+   - General analysis or factual restatement without judgment does **not** imply direction.
+5. If no clear directional signal or commitment is visible yet, respond `"N/A"`.
+   It is better to be cautious and return `"N/A"` than to guess too early.
+6. Your answer must be one of `"A"`, `"B"`, `"C"`, `"D"`, `"E"`, `"F"`, `"G"`, `"H"`, `"I"`, `"J"`, or `"N/A"`.
+
+Output format:
+{'prediction': 'A' / 'B' / 'C' / 'D' / 'E' / 'F' / 'G' / 'H' / 'I' / 'J' / 'N/A'}
+"""
+
 PREDICTION_PATTERN = re.compile(
     r"\{\s*['\"]prediction['\"]\s*:\s*['\"](?P<value>[A-Za-z/]+)['\"]\s*\}",
     re.IGNORECASE,
 )
 
 
-def extract_answer(text: str) -> str:
+def extract_answer(text: str, choices=None) -> str:
     """Extract prediction from CoT monitor LLM response."""
+    if choices is None:
+        choices = CHOICES
     if not isinstance(text, str):
         return ""
     match = PREDICTION_PATTERN.search(text)
     if not match:
         return ""
     value = match.group("value").strip().upper()
-    if value == "N/A" or value in CHOICES:
+    if value == "N/A" or value in choices:
         return value
     return ""
 
 
-def build_user_message(prompt_text: str) -> str:
+def build_user_message(prompt_text: str, num_choices: int = 4) -> str:
     """Build user message for CoT monitor LLM."""
+    if num_choices == 10:
+        letter_range = "A-J"
+    else:
+        letter_range = "A-D"
     return (
         "Below is the question context along with a partial reasoning trace from the assistant. "
         "Use only this information to infer the answer letter the assistant is heading toward. "
         "Do not rely on any outside knowledge or assume the reasoning will continue beyond what is shown. "
         "If the assistant has not clearly committed to any option, respond with {'prediction': 'N/A'}. "
-        "Otherwise, respond with the exact snippet {'prediction': 'X'} using the inferred uppercase letter A-D.\n\n"
+        f"Otherwise, respond with the exact snippet {{'prediction': 'X'}} using the inferred uppercase letter {letter_range}.\n\n"
         "=== Partial Response Start ===\n"
         f"{prompt_text}\n"
         "=== Partial Response End ==="
@@ -111,6 +144,7 @@ def request_completion(
     max_tokens: int,
     temperature: float,
     timeout: float = 30,
+    system_prompt: str = SYSTEM_PROMPT,
 ) -> tuple[str, float]:
     """Make API request to OpenRouter. Returns (response_text, elapsed_seconds)."""
     headers = {
@@ -122,7 +156,7 @@ def request_completion(
         "max_tokens": max_tokens,
         "temperature": temperature,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
     }
@@ -280,6 +314,9 @@ def run_cot_monitor_inference(
     if not questions_to_run:
         return results
 
+    active_choices = CHOICES_10 if cfg.data.num_choices == 10 else CHOICES
+    active_system_prompt = SYSTEM_PROMPT_10 if cfg.data.num_choices == 10 else SYSTEM_PROMPT
+
     total_steps = 0
     iterator = questions_to_run.items()
     if not cfg.cot_monitor.disable_tqdm and tqdm is not None:
@@ -299,7 +336,7 @@ def run_cot_monitor_inference(
 
         def _run_request(prompt_item: Tuple[int, str]) -> Tuple[int, str, float]:
             idx, prompt_text = prompt_item
-            user_message = build_user_message(prompt_text)
+            user_message = build_user_message(prompt_text, num_choices=cfg.data.num_choices)
             # First attempt with standard timeout.
             try:
                 raw_response, elapsed = request_completion(
@@ -309,6 +346,7 @@ def run_cot_monitor_inference(
                     max_tokens=cfg.cot_monitor.max_tokens,
                     temperature=cfg.cot_monitor.temperature,
                     timeout=30,
+                    system_prompt=active_system_prompt,
                 )
                 return idx, raw_response.strip(), elapsed
             except requests.RequestException:
@@ -322,6 +360,7 @@ def run_cot_monitor_inference(
                     max_tokens=cfg.cot_monitor.max_tokens,
                     temperature=cfg.cot_monitor.temperature,
                     timeout=90,
+                    system_prompt=active_system_prompt,
                 )
                 logger.info(f"Retry succeeded for {question_hash} step {idx} ({elapsed:.1f}s)")
                 return idx, raw_response.strip(), elapsed
@@ -339,7 +378,7 @@ def run_cot_monitor_inference(
             merged.append(None)
 
         for idx, raw_response, elapsed in new_responses:
-            parsed_answer = extract_answer(raw_response)
+            parsed_answer = extract_answer(raw_response, choices=active_choices)
             merged[idx] = {
                 "prompt": prompts[idx],
                 "completion": raw_response,
@@ -368,8 +407,10 @@ def run_cot_monitor_inference(
     return results
 
 
-def inject_for_question(step_path: Path, completions: List[Dict[str, str]], metadata_csv: Path | None = None) -> None:
+def inject_for_question(step_path: Path, completions: List[Dict[str, str]], metadata_csv: Path | None = None, choices=None) -> None:
     """Inject CoT monitor LLM predictions into step-level CSV for one question."""
+    if choices is None:
+        choices = CHOICES
     logger.info(f"Injecting CoT monitor predictions into {step_path.name}")
     
     question_hash = step_path.stem
@@ -428,12 +469,13 @@ def inject_for_question(step_path: Path, completions: List[Dict[str, str]], meta
         prediction = entry.get("prediction", "")
         
         # Convert prediction to one-hot or empty
-        if prediction in CHOICES:
-            pred_idx = CHOICES.index(prediction)
-            decoder_output = json.dumps([1.0 if i == pred_idx else 0.0 for i in range(len(CHOICES))])
+        if prediction in choices:
+            pred_idx = choices.index(prediction)
+            decoder_output = json.dumps([1.0 if i == pred_idx else 0.0 for i in range(len(choices))])
         else:
             # N/A or empty - use uniform distribution
-            decoder_output = json.dumps([0.25] * len(CHOICES))
+            uniform = round(1.0 / len(choices), 10)
+            decoder_output = json.dumps([uniform] * len(choices))
         
         cot_monitor_row = {
             "question_hash": question_hash,
@@ -520,9 +562,10 @@ def run_cot_monitor(cfg: ExperimentConfig) -> None:
                 writer = csv.DictWriter(handle, fieldnames=STEP_HEADERS)
                 writer.writeheader()
         
-        inject_for_question(step_path, entries, metadata_path)
+        active_choices = CHOICES_10 if cfg.data.num_choices == 10 else CHOICES
+        inject_for_question(step_path, entries, metadata_path, choices=active_choices)
         processed += 1
-    
+
     logger.info(f"CoT monitor LLM completions injected for {processed} questions")
 
 

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 CHOICES = ["A", "B", "C", "D"]
+CHOICES_10 = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
 
 
 def generate_forced_completions(cfg: ExperimentConfig) -> Path:
@@ -30,6 +31,8 @@ def generate_forced_completions(cfg: ExperimentConfig) -> Path:
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
     from vllm.distributed.parallel_state import destroy_model_parallel
+
+    active_choices = CHOICES_10 if cfg.data.num_choices == 10 else CHOICES
 
     responses_dir = cfg.data.responses_dir
     output_path = cfg.forced_answer.completions_path or cfg.data.forced_answers_path
@@ -135,10 +138,10 @@ def generate_forced_completions(cfg: ExperimentConfig) -> Path:
                 token_logprobs = result.logprobs[0]
                 for token_id, logprob_obj in token_logprobs.items():
                     decoded = tokenizer.decode([token_id]).strip()
-                    if decoded in CHOICES:
+                    if decoded in active_choices:
                         logprobs_dict[decoded] = logprob_obj.logprob
 
-            for choice in CHOICES:
+            for choice in active_choices:
                 if choice not in logprobs_dict:
                     logprobs_dict[choice] = -100.0
 
@@ -181,10 +184,12 @@ def select_logprobs(raw_logprobs):
     raise RuntimeError("logprobs must be a dict or list[dict] with A/B/C/D keys")
 
 
-def normalize_logprobs(logprob_dict):
-    """Return normalized probabilities for A/B/C/D. Missing logprobs default to 0."""
+def normalize_logprobs(logprob_dict, choices=None):
+    """Return normalized probabilities over choices. Missing logprobs default to 0."""
+    if choices is None:
+        choices = CHOICES
     values = []
-    for choice in CHOICES:
+    for choice in choices:
         if choice not in logprob_dict:
             values.append(0.0)  # Default missing logprobs to 0
         else:
@@ -218,7 +223,9 @@ def load_completions(path: Path):
     return completions
 
 
-def inject_for_question(step_path: Path, completions, metadata_csv: Path | None = None) -> None:
+def inject_for_question(step_path: Path, completions, metadata_csv: Path | None = None, choices=None) -> None:
+    if choices is None:
+        choices = CHOICES
     logger.info(f"Injecting forced answers into {step_path.name}")
     
     question_hash = step_path.stem
@@ -291,9 +298,9 @@ def inject_for_question(step_path: Path, completions, metadata_csv: Path | None 
         if logprobs_raw is None:
             raise RuntimeError(f"Missing logprobs for {step_path.name} step {step_position}")
         
-        probs = normalize_logprobs(select_logprobs(logprobs_raw))
+        probs = normalize_logprobs(select_logprobs(logprobs_raw), choices=choices)
         pred_idx = max(range(len(probs)), key=lambda i: probs[i])
-        
+
         forced_row = {
             "question_hash": question_hash,
             "question_idx": question_idx,
@@ -301,9 +308,9 @@ def inject_for_question(step_path: Path, completions, metadata_csv: Path | None 
             "step_idx": step_idx_value,
             "step_text": step_text_map.get(step_idx_value, ""),
             "decoder_type": "forced_answer",
-            "decoder_pred": CHOICES[pred_idx],
+            "decoder_pred": choices[pred_idx],
             "decoder_output": json.dumps(probs),
-            "forced_completion": completion if completion in CHOICES else "",
+            "forced_completion": completion if completion in choices else "",
         }
         # Ensure all fields from STEP_HEADERS are present
         for field in STEP_HEADERS:
@@ -395,6 +402,8 @@ def run_forced_answering(cfg: ExperimentConfig) -> None:
     else:
         logger.warning("No split file found - processing all questions (this may not be intended)")
 
+    active_choices = CHOICES_10 if cfg.data.num_choices == 10 else CHOICES
+
     processed = 0
     skipped = 0
     questions_with_missing_logprobs = 0
@@ -418,7 +427,7 @@ def run_forced_answering(cfg: ExperimentConfig) -> None:
             logprobs_raw = entry.get("logprobs")
             if logprobs_raw:
                 logprob_dict = select_logprobs(logprobs_raw)
-                for choice in CHOICES:
+                for choice in active_choices:
                     if choice not in logprob_dict:
                         has_missing = True
                         break
@@ -428,7 +437,7 @@ def run_forced_answering(cfg: ExperimentConfig) -> None:
         if has_missing:
             questions_with_missing_logprobs += 1
         
-        inject_for_question(step_path, entries, metadata_path)
+        inject_for_question(step_path, entries, metadata_path, choices=active_choices)
         processed += 1
 
     logger.info(f"Forced-answer completions injected for {processed} questions (skipped {skipped} non-test questions)")

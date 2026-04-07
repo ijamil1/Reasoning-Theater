@@ -15,6 +15,7 @@ from .data_gen_config import DataGenerationConfig
 logger = logging.getLogger(__name__)
 
 CHOICE_LABELS = ["A", "B", "C", "D"]
+CHOICE_LABELS_10 = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
 
 
 @dataclass
@@ -76,6 +77,25 @@ def format_question(
 
 ## Instruction:
 Please analyze the question step by step in <think>...</think> tags, then provide your final answer in JSON format with the key "answer" containing only the letter (A, B, C, or D) of the correct choice."""
+
+
+def format_question_10(
+    question: str,
+    choices: List[str],
+) -> str:
+    """Format a 10-option multiple-choice question (A-J)."""
+    choices_text = "\n".join(
+        f"- ({label}) {choice}" for label, choice in zip(CHOICE_LABELS_10, choices)
+    )
+
+    return f"""## Question:
+{question}
+
+## Choices:
+{choices_text}
+
+## Instruction:
+Please analyze the question step by step in <think>...</think> tags, then provide your final answer in JSON format with the key "answer" containing only the letter (A through J) of the correct choice."""
 
 
 def _resolve_hash(formatted: str, question_text: str, question_lookup: Optional[Dict[str, str]]) -> str:
@@ -294,6 +314,7 @@ def load_medqa_questions(
 
 
 MMLU_PRO_CATEGORIES = {"math", "physics", "chemistry", "law", "biology"}
+MMLU_PRO_10_CATEGORIES = {"math", "physics", "chemistry", "law", "biology", "business", "economics", "history"}
 
 # Resolved relative to this file's package root (src/data_generation/../../dataset_prep/)
 _REPO_ROOT = Path(__file__).parent.parent.parent
@@ -357,6 +378,43 @@ def load_mmlu_pro_questions(
     return questions
 
 
+def load_mmlu_pro_10_questions(
+    config: DataGenerationConfig,
+    question_lookup: Optional[Dict[str, str]] = None,
+) -> List[QuestionData]:
+    """Load MMLU-Pro test split with all 10 original answer options (no distractor pre-selection)."""
+    logger.info("Loading MMLU-Pro test split from TIGER-Lab/MMLU-Pro (10-option)")
+    dataset = load_dataset("TIGER-Lab/MMLU-Pro", split="test")
+
+    questions = []
+    for item in dataset:
+        if item["category"].lower() not in MMLU_PRO_10_CATEGORIES:
+            continue
+
+        options = list(item["options"])
+        if len(options) != 10:
+            logger.warning(f"Skipping question {item['question_id']}: expected 10 options, got {len(options)}")
+            continue
+
+        correct_answer = CHOICE_LABELS_10[item["answer_index"]]
+        formatted = format_question_10(item["question"], options)
+        q_hash = _resolve_hash(formatted, item["question"], question_lookup)
+
+        questions.append(
+            QuestionData(
+                question_hash=q_hash,
+                question=item["question"],
+                choices=options,
+                correct_answer=correct_answer,
+                formatted_question=formatted,
+                category=item["category"],
+            )
+        )
+
+    logger.info(f"Loaded {len(questions)} MMLU-Pro 10-option questions from categories: {MMLU_PRO_10_CATEGORIES}")
+    return questions
+
+
 def load_dataset_questions(config: DataGenerationConfig) -> List[QuestionData]:
     """Load questions from the specified dataset."""
     question_lookup = None
@@ -376,10 +434,12 @@ def load_dataset_questions(config: DataGenerationConfig) -> List[QuestionData]:
         questions = load_medqa_questions(config, question_lookup)
     elif name == "mmlu_pro":
         questions = load_mmlu_pro_questions(config, question_lookup)
+    elif name == "mmlu_pro_10":
+        questions = load_mmlu_pro_10_questions(config, question_lookup)
     else:
         raise ValueError(
             f"Unknown dataset: {config.dataset_name!r}. "
-            "Expected one of: 'gpqa', 'mmlu', 'arc-easy', 'arc-challenge', 'medqa', 'mmlu_pro'"
+            "Expected one of: 'gpqa', 'mmlu', 'arc-easy', 'arc-challenge', 'medqa', 'mmlu_pro', 'mmlu_pro_10'"
         )
 
     if config.limit is not None:

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 CHOICE_TO_IDX = {"A": 0, "B": 1, "C": 2, "D": 3}
+CHOICE_TO_IDX_10 = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7, "I": 8, "J": 9}
 
 
 class AttentionProbe(torch.nn.Module):
@@ -362,21 +363,22 @@ def load_samples(layer_idx: int, hashes: Sequence[str], cfg: ExperimentConfig, l
         
         model_ans = payload.get("parsed_answer")
         correct_ans = payload.get("correct_answer")
-        valid_choices = set(CHOICE_TO_IDX.keys())
+        active_choice_map = CHOICE_TO_IDX_10 if cfg.data.num_choices == 10 else CHOICE_TO_IDX
+        valid_choices = set(active_choice_map.keys())
         if label_type == "model_ans":
             if model_ans not in valid_choices:
                 skipped_invalid_label += 1
                 if skipped_invalid_label <= max_mismatch_warnings:
                     logger.warning(f"Skipping {qhash}: invalid model_ans '{model_ans}'")
                 continue
-            label = CHOICE_TO_IDX[model_ans]
+            label = active_choice_map[model_ans]
         elif label_type == "correct_ans":
             if correct_ans not in valid_choices:
                 skipped_invalid_label += 1
                 if skipped_invalid_label <= max_mismatch_warnings:
                     logger.warning(f"Skipping {qhash}: invalid correct_ans '{correct_ans}'")
                 continue
-            label = CHOICE_TO_IDX[correct_ans]
+            label = active_choice_map[correct_ans]
         elif label_type == "model_correct":
             if model_ans not in valid_choices or correct_ans not in valid_choices:
                 skipped_invalid_label += 1
@@ -388,7 +390,7 @@ def load_samples(layer_idx: int, hashes: Sequence[str], cfg: ExperimentConfig, l
             raise ValueError(f"Unsupported label_type: {label_type}")
 
         if cfg.probe.randomize_labels:
-            label = random.randint(0, 3)  # Random choice from A/B/C/D (0-3)
+            label = random.randint(0, cfg.data.num_choices - 1)
 
         response_tokens = payload.get("complete_rollout_tokens") or []
 
@@ -490,7 +492,7 @@ def train_one_layer(layer_idx: int, cfg: ExperimentConfig, split: Dict[str, List
     if source_samples is None:
         raise RuntimeError(f"No samples available for layer {layer_idx}")
     hidden_dim = source_samples[0]["activation"].shape[1]
-    output_dim = 1 if cfg.probe.label_type == "model_correct" else 4
+    output_dim = 1 if cfg.probe.label_type == "model_correct" else cfg.data.num_choices
     logger.info(f"Model architecture: hidden_dim={hidden_dim}, output_dim={output_dim}, probe_type={cfg.probe.probe_type}")
 
     probe_type = cfg.probe.probe_type
