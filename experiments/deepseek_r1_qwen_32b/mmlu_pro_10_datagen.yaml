@@ -6,7 +6,7 @@ data_generation:
   max_new_tokens: 30000
   temperature: 0.6
   top_p: 0.95
-  tensor_parallel_size: 1
+  tensor_parallel_size: 2
   num_layers: 64
   dtype: bfloat16
   existing_responses_dir: null
