@@ -11,10 +11,10 @@ data:
   dataset_name: mmlu
 
 setup:
-  enabled: true
+  enabled: false
 
 probe:
-  enabled: true
+  enabled: false
   train: false
   eval: true
   checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer61.pth
@@ -31,14 +31,14 @@ probe:
   num_epochs: 10
 
 forced_answer:
-  enabled: true
+  enabled: false
   generate: false
   completions_path: /workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/forced_answer_completions.json
   tensor_parallel_size: 1
   batch_size: 100
 
 cot_monitor:
-  enabled: true
+  enabled: false
   model: google/gemini-2.5-flash
   api_key_env: OPENROUTER_API_KEY
   max_tokens: 8
