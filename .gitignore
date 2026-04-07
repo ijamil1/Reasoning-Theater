@@ -30,3 +30,5 @@ streamlit_app/data/
 #Misc
 scripts/step_distribution.py
 cot_monitor_local_inference.py
+forced_answer_by_position.py
+mmlu_pro_forced_answer_plot.py

@@ -8,13 +8,14 @@ ROOT_DIR="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 LAYER=61  # num_layers=64, 0-indexed final layer
 
 DATASETS=(
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/arc_challenge_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/medqa_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/gpqa_datagen.yaml"
-    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_datagen.yaml"
+    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_datagen.yaml"
+    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/arc_challenge_datagen.yaml"
+    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/medqa_datagen.yaml"
+    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/gpqa_datagen.yaml"
+    #"${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_datagen.yaml"
+    "${ROOT_DIR}/experiments/deepseek_r1_qwen_32b/mmlu_pro_10_datagen.yaml"
 )
 
 for yaml in "${DATASETS[@]}"; do
-    bash "${ROOT_DIR}/scripts/run_datagen.sh" "${yaml}" stage2 --layer "${LAYER}"
+    bash "${ROOT_DIR}/scripts/run_datagen.sh" "${yaml}" both --layer "${LAYER}"
 done

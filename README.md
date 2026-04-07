@@ -282,3 +282,9 @@ scp -P 15169 -i /Users/irfanjamil/.ssh/id_ed25519 "root@38.128.232.245:/workspac
 ```bash
 scp -P 15169 -i /Users/irfanjamil/.ssh/id_ed25519 "root@38.128.232.245:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/predictions_metadata.csv" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/
 ```
+
+--
+
+```bash
+scp -P 45334 -i /Users/irfanjamil/.ssh/id_ed25519 "root@69.19.136.173:/workspace/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/predictions_metadata.csv" /Users/irfanjamil/Reasoning-Theater/results/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/
+```
