@@ -17,5 +17,5 @@ DATASETS=(
 )
 
 for yaml in "${DATASETS[@]}"; do
-    bash "${ROOT_DIR}/scripts/run_datagen.sh" "${yaml}" both --layer "${LAYER}"
+    bash "${ROOT_DIR}/scripts/run_datagen.sh" "${yaml}" stage2 --layer "${LAYER}"
 done
