@@ -146,6 +146,10 @@ def setup_data(cfg: ExperimentConfig) -> None:
                 rng_ds = random.Random(cfg.run.seed)
                 rng_ds.shuffle(hashes)
                 hashes = hashes[:3000]
+            elif cfg.data.dataset_name == "mmlu_pro_10":
+                rng_ds = random.Random(cfg.run.seed)
+                rng_ds.shuffle(hashes)
+                hashes = hashes[:4000]
             if cfg.data.dataset_name == "gpqa_diamond":
                 split = {"train": [], "val": [], "test": hashes}
             else:
