@@ -58,7 +58,7 @@ class ProbeConfig:
 @dataclass
 class SetupConfig:
     enabled: bool = True
-    train_val_test_split_ratio: List[float] = field(default_factory=lambda: [0.8, 0.1, 0.1])
+    train_val_test_split_ratio: List[float] = field(default_factory=lambda: [0.7, 0.15, 0.15])
 
 
 @dataclass

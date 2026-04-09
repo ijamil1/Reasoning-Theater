@@ -1,22 +1,17 @@
-"""Hyperparameter grid search for mmlu_pro_10 probe training.
+"""Train an AttentionProbe for mmlu_pro_10 with fixed hyperparameters.
 
-Trains an AttentionProbe at a fixed layer for every combination of
-(batch_size, learning_rate, weight_decay), evaluates on the validation set,
-and reports a ranked results table. Saves each checkpoint plus a separate
-'best' checkpoint.
+Each run appends one row to probe_results.csv so results across different
+hyperparameter settings can be compared over time.
 
 Usage:
-    python -m src.analysis.run_hpsearch_mmlu_pro_10 experiments/deepseek_r1_qwen_32b/hpsearch_mmlu_pro_10.yaml
+    python -m src.analysis.run_probe_mmlu_pro_10 experiments/deepseek_r1_qwen_32b/probe_mmlu_pro_10.yaml
 """
 
 import argparse
-import copy
 import csv
-import itertools
 import json
 import logging
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
 
@@ -31,17 +26,15 @@ from .run_probing import (
     collate,
     load_samples,
 )
-from .setup_data import setup_run
+from .setup_data import setup_data as setup_run
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class HpSearchConfig:
-    batch_sizes: List[int] = field(default_factory=lambda: [16, 32, 64])
-    learning_rates: List[float] = field(default_factory=lambda: [0.001, 0.005, 0.01])
-    weight_decays: List[float] = field(default_factory=lambda: [0.001, 0.01])
+RESULTS_FIELDS = [
+    "batch_size", "learning_rate", "weight_decay", "num_epochs",
+    "best_val_loss", "best_val_acc", "best_epoch", "checkpoint",
+]
 
 
 def load_config(path: Path):
@@ -50,8 +43,7 @@ def load_config(path: Path):
     return raw
 
 
-def build_experiment_config(raw: dict, bs: int, lr: float, wd: float) -> ExperimentConfig:
-    """Build an ExperimentConfig for one HP combination."""
+def build_experiment_config(raw: dict) -> ExperimentConfig:
     run_raw = raw["run"]
     data_raw = raw["data"]
     probe_raw = raw["probe"]
@@ -76,10 +68,10 @@ def build_experiment_config(raw: dict, bs: int, lr: float, wd: float) -> Experim
         selected_layer=int(probe_raw.get("selected_layer", 61)),
         probe_type=str(probe_raw.get("probe_type", "attention")),
         label_type=str(probe_raw.get("label_type", "model_ans")),
-        batch_size=bs,
-        learning_rate=lr,
-        weight_decay=wd,
-        num_epochs=int(probe_raw.get("num_epochs", 10)),
+        batch_size=int(probe_raw.get("batch_size", 32)),
+        learning_rate=float(probe_raw.get("learning_rate", 0.001)),
+        weight_decay=float(probe_raw.get("weight_decay", 0.001)),
+        num_epochs=int(probe_raw.get("num_epochs", 20)),
         mlp_hidden_dim=int(probe_raw.get("mlp_hidden_dim", 32)),
         normalize_acts=bool(probe_raw.get("normalize_acts", True)),
         disable_tqdm=True,
@@ -153,15 +145,13 @@ def train_and_eval(cfg: ExperimentConfig, split: Dict[str, List[str]]) -> Dict:
 
         avg_val_loss = val_loss_sum / val_count if val_count > 0 else float("inf")
         val_acc = val_correct / val_count if val_count > 0 else 0.0
+        logger.info(f"  epoch {epoch+1}/{cfg.probe.num_epochs}  val_loss={avg_val_loss:.4f}  val_acc={val_acc*100:.2f}%")
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_val_acc = val_acc
             best_epoch = epoch + 1
             best_state = {k: v.cpu() for k, v in model.state_dict().items()}
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
 
     return {
         "best_val_loss": best_val_loss,
@@ -171,101 +161,61 @@ def train_and_eval(cfg: ExperimentConfig, split: Dict[str, List[str]]) -> Dict:
     }
 
 
+def append_result(csv_path: Path, row: Dict) -> None:
+    """Append one result row to the CSV, writing a header if the file is new."""
+    write_header = not csv_path.exists()
+    with csv_path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=RESULTS_FIELDS)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="HP grid search for mmlu_pro_10 probe.")
-    parser.add_argument("config", type=Path, help="Path to hpsearch YAML config")
+    parser = argparse.ArgumentParser(description="Train AttentionProbe for mmlu_pro_10.")
+    parser.add_argument("config", type=Path, help="Path to YAML config")
     args = parser.parse_args()
 
     raw = load_config(args.config)
+    cfg = build_experiment_config(raw)
 
-    hps_raw = raw.get("hpsearch", {})
-    hps = HpSearchConfig(
-        batch_sizes=hps_raw.get("batch_sizes", [16, 32, 64]),
-        learning_rates=hps_raw.get("learning_rates", [0.001, 0.005, 0.01]),
-        weight_decays=hps_raw.get("weight_decays", [0.001, 0.01]),
-    )
-
-    # Build a base config just to run setup (split generation)
-    base_cfg = build_experiment_config(raw, bs=16, lr=0.001, wd=0.01)
     logger.info("Running setup to generate train/val/test split and metadata")
-    setup_run(base_cfg)
+    setup_run(cfg)
 
-    # Load the split
-    split_path = base_cfg.resolved_paths()["root"] / "train_val_test_split.json"
+    split_path = cfg.resolved_paths()["root"] / "train_val_test_split.json"
     with split_path.open() as f:
         split = json.load(f)
     logger.info(f"Split sizes: train={len(split['train'])}, val={len(split['val'])}, test={len(split['test'])}")
 
-    results_dir = base_cfg.resolved_paths()["root"] / "hpsearch"
+    layer_idx = cfg.probe.selected_layer
+    bs, lr, wd = cfg.probe.batch_size, cfg.probe.learning_rate, cfg.probe.weight_decay
+    logger.info(f"Training: layer={layer_idx}, bs={bs}, lr={lr}, wd={wd}, epochs={cfg.probe.num_epochs}")
+
+    result = train_and_eval(cfg, split)
+
+    results_dir = cfg.resolved_paths()["root"] / "probe_runs"
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    combos = list(itertools.product(hps.batch_sizes, hps.learning_rates, hps.weight_decays))
-    logger.info(f"Running {len(combos)} HP combinations")
+    label = f"bs{bs}_lr{lr}_wd{wd}"
+    ckpt_path = results_dir / f"probe_layer{layer_idx}_{label}.pth"
+    torch.save(result["model_state"], ckpt_path)
 
-    rows = []
-    best_val_loss = float("inf")
-    best_combo = None
-    best_state = None
-    layer_idx = int(raw["probe"].get("selected_layer", 61))
+    row = {
+        "batch_size": bs,
+        "learning_rate": lr,
+        "weight_decay": wd,
+        "num_epochs": cfg.probe.num_epochs,
+        "best_val_loss": result["best_val_loss"],
+        "best_val_acc": result["best_val_acc"],
+        "best_epoch": result["best_epoch"],
+        "checkpoint": str(ckpt_path),
+    }
+    csv_path = cfg.resolved_paths()["root"] / "probe_results.csv"
+    append_result(csv_path, row)
 
-    for bs, lr, wd in combos:
-        label = f"bs{bs}_lr{lr}_wd{wd}"
-        logger.info(f"=== {label} ===")
-        cfg = build_experiment_config(raw, bs=bs, lr=lr, wd=wd)
-
-        result = train_and_eval(cfg, split)
-
-        ckpt_path = results_dir / f"probe_layer{layer_idx}_{label}.pth"
-        torch.save(result["model_state"], ckpt_path)
-        logger.info(f"  val_loss={result['best_val_loss']:.4f}  val_acc={result['best_val_acc']*100:.2f}%  best_epoch={result['best_epoch']}")
-
-        rows.append({
-            "batch_size": bs,
-            "learning_rate": lr,
-            "weight_decay": wd,
-            "best_val_loss": result["best_val_loss"],
-            "best_val_acc": result["best_val_acc"],
-            "best_epoch": result["best_epoch"],
-            "checkpoint": str(ckpt_path),
-        })
-
-        if result["best_val_loss"] < best_val_loss:
-            best_val_loss = result["best_val_loss"]
-            best_combo = (bs, lr, wd)
-            best_state = result["model_state"]
-
-    # Sort by val loss ascending
-    rows.sort(key=lambda r: r["best_val_loss"])
-
-    # Print results table
-    print("\n=== HP Search Results (sorted by val loss) ===")
-    header = f"{'batch_size':>10}  {'lr':>8}  {'wd':>8}  {'val_loss':>10}  {'val_acc':>8}  {'best_epoch':>10}"
-    print(header)
-    print("-" * len(header))
-    for r in rows:
-        print(
-            f"{r['batch_size']:>10}  {r['learning_rate']:>8.4f}  {r['weight_decay']:>8.4f}"
-            f"  {r['best_val_loss']:>10.4f}  {r['best_val_acc']*100:>7.2f}%  {r['best_epoch']:>10}"
-        )
-
-    # Save CSV
-    csv_path = results_dir / "hpsearch_results.csv"
-    with csv_path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["batch_size", "learning_rate", "weight_decay",
-                                               "best_val_loss", "best_val_acc", "best_epoch", "checkpoint"])
-        writer.writeheader()
-        writer.writerows(rows)
-    logger.info(f"Results saved to {csv_path}")
-
-    # Save best checkpoint
-    if best_state is not None:
-        best_path = results_dir / f"probe_layer{layer_idx}_best.pth"
-        torch.save(best_state, best_path)
-        bs, lr, wd = best_combo
-        logger.info(f"Best config: batch_size={bs}, lr={lr}, wd={wd}  val_loss={best_val_loss:.4f}")
-        logger.info(f"Best checkpoint saved to {best_path}")
-        print(f"\nBest checkpoint: {best_path}")
-        print(f"Best config: batch_size={bs}, lr={lr}, weight_decay={wd}, val_loss={best_val_loss:.4f}")
+    logger.info(f"Best: val_loss={result['best_val_loss']:.4f}  val_acc={result['best_val_acc']*100:.2f}%  epoch={result['best_epoch']}")
+    logger.info(f"Checkpoint: {ckpt_path}")
+    logger.info(f"Results appended to: {csv_path}")
 
 
 if __name__ == "__main__":

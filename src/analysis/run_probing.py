@@ -68,6 +68,73 @@ class AttentionProbe(torch.nn.Module):
         return pooled
 
 
+class CausalSelfAttentionProbe(torch.nn.Module):
+    """Probe that contextualises each token via causal self-attention before classifying.
+
+    Each token t attends only to tokens t' <= t (causal mask), so its context
+    vector is a weighted blend of all preceding hidden states. The last valid
+    token's context vector is then projected to class logits.
+
+    Args:
+        in_features:  hidden state dimensionality (e.g. 5120 for Qwen-32B)
+        out_features: number of answer choices (e.g. 10 for mmlu_pro_10)
+        dtype:        parameter dtype (e.g. torch.bfloat16)
+        d_k:          query/key projection dimension
+        d_v:          value projection dimension
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        dtype: torch.dtype,
+        d_k: int = 64,
+        d_v: int = 64,
+    ) -> None:
+        super().__init__()
+        self.d_k = d_k
+        self.W_q = torch.nn.Linear(in_features, d_k, bias=False, dtype=dtype)
+        self.W_k = torch.nn.Linear(in_features, d_k, bias=False, dtype=dtype)
+        self.W_v = torch.nn.Linear(in_features, d_v, bias=False, dtype=dtype)
+        self.W_out = torch.nn.Linear(d_v, out_features, dtype=dtype)
+
+    def forward(self, x: torch.Tensor, lengths: Sequence[int] | None = None) -> torch.Tensor:
+        # x: [batch, seq_len, in_features]
+        batch, seq_len, _ = x.shape
+
+        Q = self.W_q(x)  # [batch, seq_len, d_k]
+        K = self.W_k(x)  # [batch, seq_len, d_k]
+        V = self.W_v(x)  # [batch, seq_len, d_v]
+
+        # Scaled dot-product scores: [batch, seq_len, seq_len]
+        scale = math.sqrt(self.d_k)
+        scores = torch.bmm(Q, K.transpose(1, 2)) / scale
+
+        # Causal mask: token t may not attend to t' > t
+        causal_mask = torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool).triu(diagonal=1)
+        scores = scores.masked_fill(causal_mask.unsqueeze(0), float("-inf"))
+
+        # Padding mask: ignore positions beyond each example's actual length
+        if lengths is not None:
+            for i, length in enumerate(lengths):
+                if length < seq_len:
+                    scores[i, :, length:] = float("-inf")
+                    scores[i, length:, :] = float("-inf")
+
+        attn_weights = torch.nn.functional.softmax(scores, dim=-1)  # [batch, seq_len, seq_len]
+
+        context = torch.bmm(attn_weights, V)  # [batch, seq_len, d_v]
+
+        # Take the last valid token's context vector for each example
+        if lengths is not None:
+            last_indices = torch.tensor([l - 1 for l in lengths], device=x.device, dtype=torch.long)
+        else:
+            last_indices = torch.full((batch,), seq_len - 1, device=x.device, dtype=torch.long)
+        last_context = context[torch.arange(batch, device=x.device), last_indices]  # [batch, d_v]
+
+        return self.W_out(last_context)  # [batch, out_features]
+
+
 class RecencyWeightedLinearProbe(torch.nn.Module):
     """Linear probe using exponentially decaying recency-weighted pooling.
 
