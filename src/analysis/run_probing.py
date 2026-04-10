@@ -102,35 +102,33 @@ class CausalSelfAttentionProbe(torch.nn.Module):
         # x: [batch, seq_len, in_features]
         batch, seq_len, _ = x.shape
 
-        Q = self.W_q(x)  # [batch, seq_len, d_k]
-        K = self.W_k(x)  # [batch, seq_len, d_k]
-        V = self.W_v(x)  # [batch, seq_len, d_v]
-
-        # Scaled dot-product scores: [batch, seq_len, seq_len]
-        scale = math.sqrt(self.d_k)
-        scores = torch.bmm(Q, K.transpose(1, 2)) / scale
-
-        # Causal mask: token t may not attend to t' > t
-        causal_mask = torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool).triu(diagonal=1)
-        scores = scores.masked_fill(causal_mask.unsqueeze(0), float("-inf"))
-
-        # Padding mask: ignore positions beyond each example's actual length
-        if lengths is not None:
-            for i, length in enumerate(lengths):
-                if length < seq_len:
-                    scores[i, :, length:] = float("-inf")
-                    scores[i, length:, :] = float("-inf")
-
-        attn_weights = torch.nn.functional.softmax(scores, dim=-1)  # [batch, seq_len, seq_len]
-
-        context = torch.bmm(attn_weights, V)  # [batch, seq_len, d_v]
-
-        # Take the last valid token's context vector for each example
         if lengths is not None:
             last_indices = torch.tensor([l - 1 for l in lengths], device=x.device, dtype=torch.long)
         else:
             last_indices = torch.full((batch,), seq_len - 1, device=x.device, dtype=torch.long)
-        last_context = context[torch.arange(batch, device=x.device), last_indices]  # [batch, d_v]
+
+        # Only compute the query for the last valid token of each example.
+        # This avoids materialising the full [batch, seq_len, seq_len] score matrix.
+        x_last = x[torch.arange(batch, device=x.device), last_indices]  # [batch, in_features]
+        q_last = self.W_q(x_last)                                        # [batch, d_k]
+
+        K = self.W_k(x)  # [batch, seq_len, d_k]
+        V = self.W_v(x)  # [batch, seq_len, d_v]
+
+        # Scores for last token attending to all positions: [batch, seq_len]
+        scale = math.sqrt(self.d_k)
+        scores = torch.bmm(q_last.unsqueeze(1), K.transpose(1, 2)).squeeze(1) / scale
+
+        # Mask out positions beyond each example's actual length (padding)
+        if lengths is not None:
+            for i, length in enumerate(lengths):
+                if length < seq_len:
+                    scores[i, length:] = float("-inf")
+
+        attn_weights = torch.nn.functional.softmax(scores, dim=-1)  # [batch, seq_len]
+
+        # Weighted sum of value vectors
+        last_context = torch.bmm(attn_weights.unsqueeze(1), V).squeeze(1)  # [batch, d_v]
 
         return self.W_out(last_context)  # [batch, out_features]
 
