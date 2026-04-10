@@ -1,4 +1,4 @@
-"""Train an AttentionProbe for mmlu_pro_10 with fixed hyperparameters.
+"""Train a CausalSelfAttentionProbe for mmlu_pro_10 with fixed hyperparameters.
 
 Each run appends one row to probe_results.csv so results across different
 hyperparameter settings can be compared over time.
@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 
 from .experiment_config import DataConfig, ExperimentConfig, ProbeConfig, RunConfig, SetupConfig, ForcedAnswerConfig, CotMonitorConfig
 from .run_probing import (
-    AttentionProbe,
+    CausalSelfAttentionProbe,
     ProbeDataset,
     collate,
     load_samples,
@@ -95,7 +95,7 @@ def train_and_eval(cfg: ExperimentConfig, split: Dict[str, List[str]]) -> Dict:
 
     hidden_dim = samples_train[0]["activation"].shape[1]
     output_dim = cfg.data.num_choices
-    model = AttentionProbe(hidden_dim, output_dim, torch.bfloat16)
+    model = CausalSelfAttentionProbe(hidden_dim, output_dim, torch.bfloat16)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
