@@ -25,6 +25,7 @@ class DataConfig:
     responses_dir: Path
     activations_dir: Path
     tokenizer_model: str = "deepseek-ai/DeepSeek-R1-0528"
+    model_checkpoint_dir: Optional[Path] = None  # Local path to model weights for embed_tokens loading
     forced_answers_path: Optional[Path] = None
     split_path: Optional[Path] = None
     dataset_name: Optional[str] = None
@@ -112,6 +113,7 @@ class ExperimentConfig:
             responses_dir=Path(data_raw["responses_dir"]),
             activations_dir=Path(data_raw["activations_dir"]),
             tokenizer_model=data_raw.get("tokenizer_model", "deepseek-ai/DeepSeek-R1-0528"),
+            model_checkpoint_dir=Path(data_raw["model_checkpoint_dir"]) if data_raw.get("model_checkpoint_dir") else None,
             forced_answers_path=Path(data_raw["forced_answers_path"]) if data_raw.get("forced_answers_path") else None,
             split_path=Path(data_raw["split_path"]) if data_raw.get("split_path") else None,
             dataset_name=data_raw.get("dataset_name"),

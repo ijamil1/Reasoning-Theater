@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer
 
 from .experiment_config import ExperimentConfig
-from .setup_data import STEP_HEADERS, TOKEN_HEADERS
+from .setup_data import STEP_HEADERS, TOKEN_HEADERS, extract_answer_choices
 from .utils import (
     DELIMITERS,
     compute_reasoning_token_start,
@@ -131,6 +131,83 @@ class CausalSelfAttentionProbe(torch.nn.Module):
         last_context = torch.bmm(attn_weights.unsqueeze(1), V).squeeze(1)  # [batch, d_v]
 
         return self.W_out(last_context)  # [batch, out_features]
+
+
+class AnswerChoiceProbe(torch.nn.Module):
+    """Probe that matches an aggregated hidden state against answer choice embeddings.
+
+    Aggregation: causal self-attention over the sequence, taking the last valid
+    token's context vector (same mechanism as CausalSelfAttentionProbe).
+
+    Projection: bottleneck W_down [H→d_bottleneck] → W_up [d_bottleneck→H] maps
+    the context into the model's input-embedding space.
+
+    Scoring: raw dot product between the projected query and each answer choice's
+    mean-pooled input embedding (precomputed, no learned transform on choices).
+
+    Args:
+        in_features:    hidden state dimensionality H
+        num_choices:    number of answer options (unused in forward, kept for API consistency)
+        dtype:          parameter dtype (e.g. torch.bfloat16)
+        d_attn:         query/key projection dimension for causal self-attention
+        d_bottleneck:   intermediate dimension for the bottleneck projection
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        num_choices: int,
+        dtype: torch.dtype,
+        d_attn: int = 64,
+        d_bottleneck: int = 1024,
+    ) -> None:
+        super().__init__()
+        self.d_attn = d_attn
+        self.W_q = torch.nn.Linear(in_features, d_attn, bias=False, dtype=dtype)
+        self.W_k = torch.nn.Linear(in_features, d_attn, bias=False, dtype=dtype)
+        self.W_v = torch.nn.Linear(in_features, in_features, bias=False, dtype=dtype)
+        self.W_down = torch.nn.Linear(in_features, d_bottleneck, bias=False, dtype=dtype)
+        self.W_up = torch.nn.Linear(d_bottleneck, in_features, bias=False, dtype=dtype)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        lengths: Sequence[int] | None = None,
+        choice_embeddings: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # x: [batch, seq_len, H]
+        # choice_embeddings: [batch, num_choices, H]  — precomputed, no grad
+        batch, seq_len, H = x.shape
+
+        if lengths is not None:
+            last_indices = torch.tensor([l - 1 for l in lengths], device=x.device, dtype=torch.long)
+        else:
+            last_indices = torch.full((batch,), seq_len - 1, device=x.device, dtype=torch.long)
+
+        # Query only for the last valid token (avoids O(seq_len²) score matrix)
+        x_last = x[torch.arange(batch, device=x.device), last_indices]  # [batch, H]
+        q = self.W_q(x_last)                                             # [batch, d_attn]
+
+        K = self.W_k(x)  # [batch, seq_len, d_attn]
+        V = self.W_v(x)  # [batch, seq_len, H]
+
+        # Attention scores for last token over all positions: [batch, seq_len]
+        scores = torch.bmm(q.unsqueeze(1), K.transpose(1, 2)).squeeze(1) / math.sqrt(self.d_attn)
+
+        if lengths is not None:
+            for i, length in enumerate(lengths):
+                if length < seq_len:
+                    scores[i, length:] = float("-inf")
+
+        attn_weights = torch.nn.functional.softmax(scores, dim=-1)  # [batch, seq_len]
+        context = torch.bmm(attn_weights.unsqueeze(1), V).squeeze(1)  # [batch, H]
+
+        # Bottleneck projection into input-embedding space
+        query = self.W_up(self.W_down(context))  # [batch, H]
+
+        # Score against each answer choice: [batch, num_choices]
+        logits = torch.bmm(choice_embeddings, query.unsqueeze(-1)).squeeze(-1) / math.sqrt(H)
+        return logits
 
 
 class RecencyWeightedLinearProbe(torch.nn.Module):
@@ -506,6 +583,25 @@ def load_samples(layer_idx: int, hashes: Sequence[str], cfg: ExperimentConfig, l
     if skipped_invalid_label > 0:
         logger.warning(f"Skipped {skipped_invalid_label} samples due to invalid labels")
     logger.info(f"Loaded {len(samples)} samples (skipped {skipped_missing} missing paths, {skipped_no_activation} no activation files)")
+    return samples
+
+
+def load_samples_with_choices(
+    layer_idx: int,
+    hashes: Sequence[str],
+    cfg: ExperimentConfig,
+    label_type: str,
+    is_training_set: bool = False,
+) -> List[Dict]:
+    """Like load_samples, but also parses answer choice texts into each sample's meta.
+
+    Adds meta["answer_choices"]: List[str] — the full text of each answer option,
+    parsed from the formatted_question field already present in meta.
+    """
+    samples = load_samples(layer_idx, hashes, cfg, label_type, is_training_set)
+    for sample in samples:
+        choices = extract_answer_choices(sample["meta"]["formatted_question"])
+        sample["meta"]["answer_choices"] = choices
     return samples
 
 
