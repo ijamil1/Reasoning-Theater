@@ -141,7 +141,11 @@ def precompute_choice_embeddings(
     Samples missing or short answer_choices lists are filled with zeros.
     """
     H = embed_weight.shape[1]
-    for sample in samples:
+    n = len(samples)
+    log_every = max(1, n // 10)
+    for idx, sample in enumerate(samples):
+        if idx % log_every == 0:
+            logger.info(f"  Precomputing choice embeddings: {idx}/{n} ({100*idx//n}%)")
         choices = sample["meta"].get("answer_choices", [])
         choice_embs = []
         for i in range(num_choices):
