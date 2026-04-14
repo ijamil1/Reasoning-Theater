@@ -1023,6 +1023,29 @@ def compute_slope_comparison_stats(
             'slope_difference_quadratic': forced_slope_quad - cot_monitor_slope_quad,
         }
 
+    if 'probe' in method_data and 'forced' in method_data:
+        probe_acc_s = method_data['probe'].set_index('bin')['accuracy']
+        forced_acc_s = method_data['forced'].set_index('bin')['accuracy']
+        all_bins = pd.Index(range(num_bins))
+        probe_reindexed = probe_acc_s.reindex(all_bins).interpolate(method='nearest').ffill().bfill()
+        forced_reindexed = forced_acc_s.reindex(all_bins).interpolate(method='nearest').ffill().bfill()
+        best_values = np.maximum(probe_reindexed.values, forced_reindexed.values)
+        valid_bins = probe_acc_s.index.union(forced_acc_s.index)
+        best_acc_s = pd.Series(best_values, index=all_bins)[valid_bins]
+
+        best_slope_pw = compute_average_slope(best_acc_s, num_bins)
+        best_slope_quad, best_coeffs = compute_quadratic_slope(best_acc_s)
+
+        results['best_vs_cot_monitor'] = {
+            'best_slope_pointwise': best_slope_pw,
+            'best_slope_quadratic': best_slope_quad,
+            'best_quadratic_coeffs': best_coeffs,
+            'cot_monitor_slope_pointwise': cot_monitor_slope_pw,
+            'cot_monitor_slope_quadratic': cot_monitor_slope_quad,
+            'slope_difference_pointwise': best_slope_pw - cot_monitor_slope_pw,
+            'slope_difference_quadratic': best_slope_quad - cot_monitor_slope_quad,
+        }
+
     return results
 
 
@@ -1088,6 +1111,32 @@ def compute_area_between_curves(
             'cot_monitor_mean_accuracy': cot_monitor_aligned_forced.mean(),
         }
 
+    if 'probe' in method_data and 'forced' in method_data:
+        probe_acc_full = method_data['probe'].set_index('bin')['accuracy']
+        forced_acc_full = method_data['forced'].set_index('bin')['accuracy']
+        all_bins = pd.Index(range(num_bins))
+        probe_reindexed = probe_acc_full.reindex(all_bins).interpolate(method='nearest').ffill().bfill()
+        forced_reindexed = forced_acc_full.reindex(all_bins).interpolate(method='nearest').ffill().bfill()
+        best_values = np.maximum(probe_reindexed.values, forced_reindexed.values)
+        valid_bins = probe_acc_full.index.union(forced_acc_full.index)
+        best_acc = pd.Series(best_values, index=all_bins)[valid_bins]
+
+        common_bins = best_acc.index.intersection(cot_monitor_acc.index)
+        best_aligned = best_acc.loc[common_bins]
+        cot_monitor_aligned_best = cot_monitor_acc.loc[common_bins]
+
+        diff_best = best_aligned - cot_monitor_aligned_best
+        area_best = diff_best.sum() / num_bins * 100
+        mean_diff_best = diff_best.mean()
+
+        results['best_vs_cot_monitor'] = {
+            'area': area_best,
+            'mean_accuracy_difference': mean_diff_best,
+            'num_bins_compared': len(common_bins),
+            'best_mean_accuracy': best_aligned.mean(),
+            'cot_monitor_mean_accuracy': cot_monitor_aligned_best.mean(),
+        }
+
     agreement_stats = compute_probe_forced_agreement_stats(
         run.step_level_df, run.metadata_df, probe_layer
     )
@@ -1150,6 +1199,16 @@ def compute_area_between_curves(
                 f.write(f"  CoT Monitor mean accuracy: {r['cot_monitor_mean_accuracy']:.4f}\n")
                 f.write(f"  Bins compared: {r['num_bins_compared']}\n")
                 f.write(f"  Interpretation: Forced is {'better' if r['mean_accuracy_difference'] > 0 else 'worse'} than CoT Monitor by {abs(r['mean_accuracy_difference'])*100:.2f} percentage points on average\n")
+
+            if 'best_vs_cot_monitor' in results:
+                r = results['best_vs_cot_monitor']
+                f.write(f"\nmax(Probe, Forced Answer) vs CoT Monitor\n")
+                f.write(f"  Area between curves: {r['area']:.2f}\n")
+                f.write(f"  Mean accuracy difference: {r['mean_accuracy_difference']:.4f}\n")
+                f.write(f"  max(Probe, Forced) mean accuracy: {r['best_mean_accuracy']:.4f}\n")
+                f.write(f"  CoT Monitor mean accuracy: {r['cot_monitor_mean_accuracy']:.4f}\n")
+                f.write(f"  Bins compared: {r['num_bins_compared']}\n")
+                f.write(f"  Interpretation: max(Probe, Forced) is {'better' if r['mean_accuracy_difference'] > 0 else 'worse'} than CoT Monitor by {abs(r['mean_accuracy_difference'])*100:.2f} percentage points on average\n")
 
             f.write(f"\nMax Gap Analysis (N/A = 0.25 accuracy)\n")
             f.write(f"{'-'*50}\n")
@@ -1233,6 +1292,25 @@ def compute_area_between_curves(
                     if r['forced_quadratic_coeffs'][0] is not np.nan:
                         a, b, c = r['forced_quadratic_coeffs']
                         f.write(f"    Forced fit: y = {a:.4f}x² + {b:.4f}x + {c:.4f}\n")
+
+                if 'best_vs_cot_monitor' in slope_stats:
+                    r = slope_stats['best_vs_cot_monitor']
+                    f.write(f"\nmax(Probe, Forced Answer) vs CoT Monitor\n")
+                    f.write(f"  Point-wise method:\n")
+                    f.write(f"    max(Probe, Forced) slope: {r['best_slope_pointwise']:.6f}\n")
+                    f.write(f"    CoT Monitor slope: {r['cot_monitor_slope_pointwise']:.6f}\n")
+                    f.write(f"    Slope difference: {r['slope_difference_pointwise']:.6f}\n")
+                    interpretation = "rises faster" if r['slope_difference_pointwise'] > 0 else "rises slower"
+                    f.write(f"    Interpretation: max(Probe, Forced) {interpretation} than CoT Monitor\n")
+                    f.write(f"  Quadratic fit method:\n")
+                    f.write(f"    max(Probe, Forced) slope: {r['best_slope_quadratic']:.6f}\n")
+                    f.write(f"    CoT Monitor slope: {r['cot_monitor_slope_quadratic']:.6f}\n")
+                    f.write(f"    Slope difference: {r['slope_difference_quadratic']:.6f}\n")
+                    interpretation = "rises faster" if r['slope_difference_quadratic'] > 0 else "rises slower"
+                    f.write(f"    Interpretation: max(Probe, Forced) {interpretation} than CoT Monitor\n")
+                    if r['best_quadratic_coeffs'][0] is not np.nan:
+                        a, b, c = r['best_quadratic_coeffs']
+                        f.write(f"    max(Probe, Forced) fit: y = {a:.4f}x² + {b:.4f}x + {c:.4f}\n")
             elif 'slope_comparison' in results:
                 f.write(f"  Error: {results['slope_comparison'].get('error', 'Unknown error')}\n")
 
