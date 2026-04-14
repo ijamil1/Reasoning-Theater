@@ -150,7 +150,7 @@ def setup_data(cfg: ExperimentConfig) -> None:
                 rng_ds = random.Random(cfg.run.seed)
                 rng_ds.shuffle(hashes)
                 hashes = hashes[:4000]
-            if cfg.data.dataset_name == "gpqa_diamond":
+            if cfg.data.dataset_name == "gpqa":
                 split = {"train": [], "val": [], "test": hashes}
             else:
                 train_ratio, val_ratio, _ = cfg.setup.train_val_test_split_ratio
