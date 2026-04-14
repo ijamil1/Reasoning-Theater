@@ -10,14 +10,6 @@ The original experiments were run on DeepSeek-R1-0528-671B and GPT-OSS-120B acro
 
 **TLDR:** I find evidence that CoT performativity in LLMs does seem to be a generalizable phenomenon occurring across models and datasets. Activation probing across multiple different datasets mostly supports the authors' observations that CoT performativity is difficulty-dependent (i.e.: as tasks get harder, performativity decreases). However, when including forced answering in our analysis, the empirical evidence does not fully support this. Putting this all together, CoT performativity seems to be a general phenomenon though the difficulty-dependent finding in the paper may not be fully generalizable/robust across models and datasets. This has implications for understanding LLM behavior and reasoning faithfulness but less so for the early-exit strategy used to reduce inference costs.
 
-**Plots — max(Probe, Forced Answer) vs CoT Monitor accuracy by relative reasoning position:**
-
-- [MMLU-Redux-2.0](plots/analysis_deepseek_r1_qwen_32b_mmluTrain_mmluEval/cot_vs_best_probe_forced.pdf)
-- [ARC-Challenge](plots/analysis_deepseek_r1_qwen_32b_mmluTrain_arcEval/cot_vs_best_probe_forced.pdf)
-- [MMLU-Pro](plots/analysis_deepseek_r1_qwen_32b_mmluTrain_mmlu_pro_Eval/cot_vs_best_probe_forced_mmluPro.jpg)
-- [MedQA](plots/analysis_deepseek_r1_qwen_32b_mmluTrain_medqaEval/cot_vs_best_probe_forced.pdf)
-- [GPQA-Diamond](plots/analysis_deepseek_r1_qwen_32b_mmluTrain_gpqaEval/cot_vs_best_probe_forced.pdf)
-
 ## Setup and Installation
 
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
