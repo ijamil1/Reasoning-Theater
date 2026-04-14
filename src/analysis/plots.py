@@ -514,6 +514,132 @@ def compute_method_accuracy_by_position(
     return results
 
 
+def compute_cot_vs_best_probe_forced_by_position(
+    step_level_df: pd.DataFrame,
+    metadata_df: pd.DataFrame,
+    probe_layer: int,
+    num_bins: int = 100,
+) -> dict[str, pd.DataFrame]:
+    """Compute per-bin accuracy for CoT monitor and max(probe, forced answer)."""
+    method_data = compute_method_accuracy_by_position(step_level_df, metadata_df, probe_layer, num_bins)
+
+    if 'probe' not in method_data or 'forced' not in method_data or 'cot_monitor' not in method_data:
+        return method_data
+
+    probe_df = method_data['probe'].set_index('bin')
+    forced_df = method_data['forced'].set_index('bin')
+    all_bins = pd.Index(range(num_bins))
+
+    probe_acc = probe_df['accuracy'].reindex(all_bins).interpolate(method='nearest').ffill().bfill()
+    forced_acc = forced_df['accuracy'].reindex(all_bins).interpolate(method='nearest').ffill().bfill()
+    best_acc = np.maximum(probe_acc.values, forced_acc.values)
+
+    best_df = pd.DataFrame({'bin': all_bins, 'accuracy': best_acc})
+    # Restrict to bins that exist in either probe or forced
+    valid_bins = probe_df.index.union(forced_df.index)
+    best_df = best_df[best_df['bin'].isin(valid_bins)].reset_index(drop=True)
+
+    return {
+        'cot_monitor': method_data['cot_monitor'],
+        'best_probe_forced': best_df,
+    }
+
+
+def plot_cot_vs_best_probe_forced(
+    runs: "RunData | list[RunData]",
+    probe_layer: Optional[int] = None,
+    num_bins: Optional[int] = None,
+    figsize: tuple = (12, 6),
+    save: bool = False,
+) -> plt.Figure:
+    """Plot CoT monitor accuracy vs. max(probe, forced answer) accuracy by position."""
+    if not isinstance(runs, list):
+        runs = [runs]
+
+    if len(runs) > 2:
+        raise ValueError("Maximum 2 runs supported for comparison")
+
+    if probe_layer is None:
+        probe_layer = runs[0].best_layer
+
+    if num_bins is None:
+        num_bins = min(r.median_steps_per_question for r in runs)
+
+    method_labels = {
+        'cot_monitor': 'CoT Monitor',
+        'best_probe_forced': 'max(Probe, Forced Answer)',
+    }
+    method_colors = {
+        'cot_monitor': METHOD_COLORS['cot_monitor'],
+        'best_probe_forced': ('#7B1FA2', '#CE93D8'),  # purple / light purple
+    }
+
+    same_model = len(runs) > 1 and len(set(r.model_name for r in runs)) == 1
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    for run_idx, run in enumerate(runs):
+        method_data = compute_cot_vs_best_probe_forced_by_position(
+            run.step_level_df, run.metadata_df, probe_layer, num_bins
+        )
+
+        for method_name, data in method_data.items():
+            if len(runs) > 1:
+                label = f'{method_labels[method_name]} ({run.dataset_name})'
+            else:
+                label = method_labels[method_name]
+
+            y = data['accuracy'].values
+            x = (data['bin'].values + 0.5) / num_bins * 100
+            x_full = np.concatenate([[0], x, [100]])
+            y_full = np.concatenate([[y[0]], y, [y[-1]]])
+
+            color = method_colors[method_name][run_idx]
+
+            ax.step(
+                x_full,
+                y_full,
+                where='mid',
+                color=color,
+                linestyle='-',
+                linewidth=2,
+                label=label,
+            )
+
+    ax.set_xlabel('Relative Position (%)', fontsize=FONT_SIZE_AXIS_LABEL, labelpad=10)
+    ax.set_ylabel('Accuracy', fontsize=FONT_SIZE_AXIS_LABEL, labelpad=10)
+
+    title_line1 = 'Early Decoding Accuracy (CoT Monitor vs. max(Probe, Forced Answer))'
+    if len(runs) == 1:
+        title_line2 = f'{runs[0].model_name} on {runs[0].dataset_name}'
+    elif same_model:
+        dataset_names = ' & '.join(r.dataset_name for r in runs)
+        title_line2 = f'{runs[0].model_name} on {dataset_names}'
+    else:
+        model_names = ' & '.join(r.model_name for r in runs)
+        title_line2 = f'{model_names} on {runs[0].dataset_name}'
+
+    ax.set_title(f'{title_line1}\n{title_line2}', fontsize=FONT_SIZE_TITLE, pad=15)
+
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 1.0)
+    ax.tick_params(labelsize=FONT_SIZE_TICK_LABEL)
+
+    if len(runs) > 1:
+        ax.legend(loc='lower right', fontsize=FONT_SIZE_LEGEND, framealpha=0.9, ncol=2)
+    else:
+        ax.legend(loc='lower right', fontsize=FONT_SIZE_LEGEND, framealpha=0.9)
+
+    ax.grid(True, alpha=0.3)
+    sns.despine(ax=ax)
+    plt.tight_layout()
+
+    if save:
+        save_figure(fig, "cot_vs_best_probe_forced.pdf", runs)
+
+    return fig
+
+
 def plot_early_decoding_accuracy(
     runs: "RunData | list[RunData]",
     probe_layer: Optional[int] = None,
@@ -1914,6 +2040,13 @@ def main():
         print("  - Early decoding accuracy")
         try:
             plot_early_decoding_accuracy(run, save=True)
+        except ValueError as e:
+            print(f"    Skipped: {e}")
+        plt.close('all')
+
+        print("  - CoT monitor vs. max(probe, forced answer)")
+        try:
+            plot_cot_vs_best_probe_forced(run, save=True)
         except ValueError as e:
             print(f"    Skipped: {e}")
         plt.close('all')
