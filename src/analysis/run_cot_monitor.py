@@ -544,6 +544,10 @@ def run_cot_monitor(cfg: ExperimentConfig) -> None:
         with sequences_path.open("w", encoding="utf-8") as handle:
             json.dump(sequences, handle, ensure_ascii=False, indent=2)
         logger.info(f"Saved sequences to {sequences_path}")
+    if getattr(cfg.cot_monitor, "build_sequences_only", False):
+        logger.info("build_sequences_only=true; skipping inference and CSV injection")
+        return
+
     existing_completions: Dict[str, List[Dict[str, str]]] = {}
     if completions_path.exists():
         logger.info(f"Loading existing completions from {completions_path}")
