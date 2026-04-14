@@ -33,7 +33,7 @@ probe:
 forced_answer:
   enabled: true
   generate: true
-  tensor_parallel_size: 1
+  tensor_parallel_size: 2
   batch_size: 100
 
 cot_monitor:
