@@ -11,10 +11,10 @@ data:
   dataset_name: gpqa
 
 setup:
-  enabled: true
+  enabled: false
 
 probe:
-  enabled: true
+  enabled: false
   train: false
   eval: true
   checkpoint: /workspace/Reasoning-Theater/results/models/phase4_qwen_32b_train_mmlu/probe_layer61.pth
